@@ -1,0 +1,8 @@
+.env
+node_modules/
+dist/
+__pycache__/
+*.pyc
+backups/
+*.db
+import_report.csv
