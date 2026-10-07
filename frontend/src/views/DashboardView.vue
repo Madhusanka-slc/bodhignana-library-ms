@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="home">
     <div class="page-head">
       <div>
         <h1>Good {{ greeting }}, {{ auth.user?.full_name || auth.user?.username }}</h1>
@@ -7,29 +7,59 @@
       </div>
     </div>
 
-    <div class="tiles">
-      <router-link to="/issue" class="tile main"><ArrowUpRight :size="30" />Issue book<small>Member takes books out</small></router-link>
-      <router-link to="/return" class="tile main"><ArrowDownLeft :size="30" />Return book<small>Member brings books back</small></router-link>
-      <router-link to="/search" class="tile"><Search :size="30" />Search<small>Find a book or member</small></router-link>
-      <router-link to="/members/new" class="tile"><UserPlus :size="30" />New member<small>Register a reader</small></router-link>
-      <router-link to="/books/new" class="tile"><BookPlus :size="30" />New book<small>Add a book to the library</small></router-link>
+    <!-- 1. The counter work -->
+    <div class="home-actions">
+      <router-link to="/issue" class="action-card">
+        <span class="action-icon"><ArrowUpRight :size="28" /></span>
+        <span class="action-text"><strong>Issue book</strong><small>Member takes books out</small></span>
+      </router-link>
+      <router-link to="/return" class="action-card">
+        <span class="action-icon"><ArrowDownLeft :size="28" /></span>
+        <span class="action-text"><strong>Return book</strong><small>Member brings books back</small></span>
+      </router-link>
+      <router-link to="/search" class="action-card">
+        <span class="action-icon"><Search :size="28" /></span>
+        <span class="action-text"><strong>Search</strong><small>Find a book or member</small></span>
+      </router-link>
+      <router-link to="/members/new" class="action-card">
+        <span class="action-icon"><UserPlus :size="28" /></span>
+        <span class="action-text"><strong>New member</strong><small>Register a reader</small></span>
+      </router-link>
+      <router-link to="/books/new" class="action-card">
+        <span class="action-icon"><BookPlus :size="28" /></span>
+        <span class="action-text"><strong>New book</strong><small>Add a book to the library</small></span>
+      </router-link>
     </div>
 
-    <div v-if="s" class="stats">
-      <div class="stat"><div class="v">{{ s.books_available }}</div><div class="l">Books in the library</div></div>
-      <div class="stat"><div class="v">{{ s.books_issued }}</div><div class="l">Books with members</div></div>
-      <div class="stat" :class="{ warn: s.overdue }"><div class="v">{{ s.overdue }}</div><div class="l">Overdue books</div></div>
-      <div class="stat"><div class="v">{{ s.members_active }}</div><div class="l">Active members</div></div>
-      <div class="stat"><div class="v">{{ s.issued_today }} / {{ s.returned_today }}</div><div class="l">Issued / returned today</div></div>
-      <div class="stat"><div class="v">{{ money(s.collected_today) }}</div><div class="l">Collected today</div></div>
-    </div>
+    <template v-if="s">
+      <!-- 2. Today at the counter -->
+      <h2 class="section-title">Today</h2>
+      <div class="status-row">
+        <div class="status-box neutral"><span class="v">{{ s.issued_today }}</span><span class="l">Books issued</span></div>
+        <div class="status-box neutral"><span class="v">{{ s.returned_today }}</span><span class="l">Books returned</span></div>
+        <div class="status-box neutral"><span class="v">{{ money(s.collected_today) }}</span><span class="l">Fines &amp; fees collected</span></div>
+      </div>
 
-    <div class="card">
+      <!-- 3. Where the books are -->
+      <h2 class="section-title">Books &amp; members</h2>
+      <div class="status-row">
+        <div class="status-box tint-1"><CircleCheck :size="20" /><span class="v">{{ n(s.books_available) }}</span><span class="l">In the library</span></div>
+        <div class="status-box tint-2"><Clock :size="20" /><span class="v">{{ n(s.books_issued) }}</span><span class="l">With members</span></div>
+        <div class="status-box tint-3">
+          <CircleAlert :size="20" />
+          <span class="v">{{ n(s.overdue) }}</span><span class="l">Overdue</span>
+        </div>
+        <div class="status-box tint-4"><Users :size="20" /><span class="v">{{ n(s.members_active) }}</span><span class="l">Active members</span></div>
+      </div>
+    </template>
+
+    <!-- 4. Overdue list -->
+    <div class="card overdue-card">
       <div class="card-head">
         <h2>Overdue books</h2>
         <router-link to="/reports?r=overdue" class="btn sm">See all</router-link>
       </div>
-      <div v-if="!overdue.length" class="empty">No overdue books. Everything is on time.</div>
+      <div v-if="!overdue.length" class="alert blue">No overdue books. Everything is on time.</div>
       <div v-else class="table-wrap">
         <table class="table">
           <thead><tr><th>Book</th><th>Member</th><th>Telephone</th><th>Due date</th><th class="num">Days late</th></tr></thead>
@@ -50,7 +80,9 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { ArrowDownLeft, ArrowUpRight, BookPlus, Search, UserPlus } from 'lucide-vue-next'
+import {
+  ArrowDownLeft, ArrowUpRight, BookPlus, CircleAlert, CircleCheck, Clock, Search, UserPlus, Users,
+} from 'lucide-vue-next'
 import { api } from '../api'
 import { auth } from '../store'
 import { fmtDate, money } from '../utils'
@@ -60,6 +92,7 @@ const overdue = ref([])
 const h = new Date().getHours()
 const greeting = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'
 const todayText = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+const n = (v) => Number(v || 0).toLocaleString('en-US')
 
 onMounted(async () => {
   const [stats, od] = await Promise.all([api.get('/reports/dashboard'), api.get('/reports/overdue')])
