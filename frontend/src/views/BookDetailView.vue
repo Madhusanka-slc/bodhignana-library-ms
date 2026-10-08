@@ -14,6 +14,11 @@
 
     <div class="grid-side">
       <div>
+        <div class="card center detail-cover">
+          <BookCover :src="b.cover_url" :title="b.title" size="lg" />
+          <router-link :to="`/books/${b.id}/edit`" class="btn sm mt"><ImagePlus :size="15" /> {{ b.cover_url ? 'Change cover' : 'Add cover picture' }}</router-link>
+        </div>
+
         <div class="card center">
           <img :src="qrUrl(b.acc_no, 6)" alt="Book QR code" style="width: 160px; height: 160px" />
           <img :src="barcodeUrl(b.acc_no)" alt="Book barcode" style="width: 100%; max-width: 260px; height: 60px; object-fit: fill; display: block; margin: 8px auto 0" />
@@ -83,7 +88,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Copy, Pencil, Printer } from 'lucide-vue-next'
+import { Copy, ImagePlus, Pencil, Printer } from 'lucide-vue-next'
+import BookCover from '../components/BookCover.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { api, barcodeUrl, qrUrl } from '../api'
 import { toast } from '../store'

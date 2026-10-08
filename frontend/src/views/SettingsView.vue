@@ -36,15 +36,6 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>Change my password</h2>
-      <div class="form-grid">
-        <div class="field"><label>Current password</label><input v-model="pw.old_password" type="password" /></div>
-        <div class="field"><label>New password</label><input v-model="pw.new_password" type="password" /></div>
-      </div>
-      <button class="btn primary mt" @click="changePassword">Change password</button>
-    </div>
-
     <Modal v-if="editUser" :title="editUser.id ? 'Edit staff account' : 'Add staff account'" @close="editUser = null">
       <div class="form-grid">
         <div class="field"><label>Username</label><input v-model="editUser.username" :disabled="!!editUser.id" /></div>
@@ -81,7 +72,6 @@ const admin = isAdmin()
 const s = reactive({})
 const users = ref([])
 const editUser = ref(null)
-const pw = reactive({ old_password: '', new_password: '' })
 
 const fields = [
   { key: 'library_name', label: 'Library name', wide: true },
@@ -138,17 +128,6 @@ async function saveUser() {
     editUser.value = null
     toast('Staff account saved')
     users.value = await api.get('/users')
-  } catch (e) {
-    toast(e.message, 'error')
-  }
-}
-
-async function changePassword() {
-  try {
-    await api.post('/auth/change-password', pw)
-    pw.old_password = ''
-    pw.new_password = ''
-    toast('Password changed')
   } catch (e) {
     toast(e.message, 'error')
   }

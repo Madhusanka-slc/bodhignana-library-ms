@@ -6,6 +6,7 @@
         <option v-if="!f.required" value="">-- Select --</option>
         <option v-for="o in f.options" :key="o.value ?? o" :value="o.value ?? o">{{ o.label ?? o }}</option>
       </select>
+      <DateInput v-else-if="f.type === 'date'" :id="'f-' + f.key" v-model="model[f.key]" />
       <textarea v-else-if="f.type === 'textarea'" :id="'f-' + f.key" v-model="model[f.key]" rows="2"></textarea>
       <input v-else :id="'f-' + f.key" v-model="model[f.key]" :type="f.type || 'text'"
         :placeholder="f.placeholder || ''" :step="f.type === 'number' ? 'any' : undefined"
@@ -19,5 +20,7 @@
 </template>
 
 <script setup>
+import DateInput from './DateInput.vue'
+
 defineProps({ fields: Array, model: Object })
 </script>

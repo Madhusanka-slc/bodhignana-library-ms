@@ -89,6 +89,8 @@ class MemberBrief(ORM):
 class MemberOut(MemberIn):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    photo_url: Optional[str] = None
+    created_by: Str = ""
     age: Optional[int] = None
     is_expired: bool = False
     borrowed_acc_nos: str = ""
@@ -169,6 +171,7 @@ class BookOut(BookIn):
     model_config = ConfigDict(from_attributes=True)
     id: int
     status: str
+    cover_url: Optional[str] = None
     withdrawn: bool
     withdrawn_by: Str = ""
     withdrawn_date: Optional[date] = None
@@ -184,6 +187,11 @@ class BookOut(BookIn):
 class BookPage(BaseModel):
     total: int
     items: list[BookOut]
+
+
+class PictureIn(BaseModel):
+    image: Optional[str] = None  # a picture as a data URL (data:image/jpeg;base64,...)
+    copy_from: Optional[int] = None  # books only: use the cover of this other copy
 
 
 class StatusIn(BaseModel):

@@ -5,6 +5,7 @@ from ..auth import admin_required, create_token, current_user, hash_password, ve
 from ..database import get_db
 from ..models import User
 from ..schemas import LoginIn, PasswordChange, UserCreate, UserOut, UserUpdate
+from ..services import log_action
 
 router = APIRouter(prefix="/api", tags=["auth & users"])
 
@@ -14,6 +15,8 @@ def login(data: LoginIn, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == data.username.strip()).first()
     if not user or not user.is_active or not verify_password(data.password, user.password_hash):
         raise HTTPException(401, "Wrong username or password")
+    log_action(db, user, "login", "Signed in", "user", user.id, user.username)
+    db.commit()
     return {"token": create_token(user), "user": UserOut.model_validate(user)}
 
 
@@ -29,6 +32,7 @@ def change_password(data: PasswordChange, db: Session = Depends(get_db), user: U
     if len(data.new_password) < 6:
         raise HTTPException(400, "New password must have at least 6 characters")
     user.password_hash = hash_password(data.new_password)
+    log_action(db, user, "user", "Changed own password", "user", user.id, user.username)
     db.commit()
     return {"ok": True}
 
@@ -39,7 +43,7 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(admin_required))
 
 
 @router.post("/users", response_model=UserOut)
-def create_user(data: UserCreate, db: Session = Depends(get_db), _: User = Depends(admin_required)):
+def create_user(data: UserCreate, db: Session = Depends(get_db), me_: User = Depends(admin_required)):
     username = data.username.strip()
     if not username or len(data.password) < 6:
         raise HTTPException(400, "Username is required and password must have at least 6 characters")
@@ -48,6 +52,9 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), _: User = Depen
     u = User(username=username, full_name=data.full_name, role=data.role,
              password_hash=hash_password(data.password))
     db.add(u)
+    db.flush()
+    log_action(db, me_, "user", f"Created the {'administrator' if u.role == 'admin' else 'staff'} account "
+               f"\"{u.username}\" ({u.full_name or 'no name'})", "user", u.id, u.username)
     db.commit()
     return u
 
@@ -69,5 +76,9 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), m
         if len(data.password) < 6:
             raise HTTPException(400, "Password must have at least 6 characters")
         u.password_hash = hash_password(data.password)
+    what = [w for w, v in (("name", data.full_name), ("role", data.role), ("active", data.is_active),
+                           ("password", data.password)) if v not in (None, "")]
+    log_action(db, me_, "user", f"Changed the account \"{u.username}\" ({', '.join(what) or 'no change'})",
+               "user", u.id, u.username)
     db.commit()
     return u

@@ -7,7 +7,7 @@ from ..auth import current_user
 from ..database import get_db
 from ..models import Loan, Member, Payment, User
 from ..schemas import PaymentIn, PaymentOut
-from ..services import record_payment
+from ..services import log_action, record_payment
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -32,6 +32,9 @@ def create_payment(data: PaymentIn, db: Session = Depends(get_db), user: User = 
         if not loan or loan.member_id != m.id:
             raise HTTPException(400, "This fine does not belong to this member")
     p = record_payment(db, m, data.amount, data.payment_type, user, loan=loan, notes=data.notes)
+    log_action(db, user, "payment", f"Received Rs. {float(p.amount):.2f} from {m.name} ({m.membership_no}) - "
+               f"{p.payment_type.replace('_', ' ').lower()}" + (f": {data.notes}" if data.notes else ""),
+               "payment", p.id, p.receipt_no)
     db.commit()
     db.refresh(p)
     return p

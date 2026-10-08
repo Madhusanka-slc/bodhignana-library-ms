@@ -7,8 +7,8 @@
 
     <div class="card">
       <div class="filters">
-        <div><label>From</label><input v-model="from" type="date" @change="load" /></div>
-        <div><label>To</label><input v-model="to" type="date" @change="load" /></div>
+        <div><label>From</label><DateInput v-model="from" @change="load" /></div>
+        <div><label>To</label><DateInput v-model="to" @change="load" /></div>
         <div>
           <label>Type</label>
           <select v-model="ptype" @change="load">
@@ -66,6 +66,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { Plus, Printer } from 'lucide-vue-next'
+import DateInput from '../components/DateInput.vue'
 import Modal from '../components/Modal.vue'
 import ScanBox from '../components/ScanBox.vue'
 import { api } from '../api'

@@ -1,11 +1,11 @@
 <template>
-  <div>
+  <div class="list-page">
     <div class="page-head">
       <h1>Members</h1>
       <router-link to="/members/new" class="btn primary"><UserPlus :size="18" /> New member</router-link>
     </div>
 
-    <div class="card">
+    <div class="card list-card">
       <div class="filters">
         <div class="grow">
           <label for="mq">Search</label>
@@ -29,19 +29,23 @@
         <button class="btn primary" @click="load(1)"><Search :size="16" /> Search</button>
       </div>
 
-      <div class="table-wrap">
-        <table class="table">
+      <div ref="listBox" class="table-wrap list-scroll list-fit">
+        <table class="table fit-table">
+          <colgroup>
+            <col style="width: 104px" /><col /><col style="width: 92px" /><col style="width: 150px" />
+            <col style="width: 116px" /><col style="width: 170px" /><col style="width: 116px" />
+          </colgroup>
           <thead>
-            <tr><th>Membership No</th><th>Name</th><th>Type</th><th>Telephone</th><th>Expiry date</th><th>Books now (Acc. No/s)</th><th>Status</th></tr>
+            <tr><th>Member No.</th><th>Name</th><th>Type</th><th>Telephone</th><th>Expiry date</th><th>Books now (Acc. No/s)</th><th>Status</th></tr>
           </thead>
           <tbody>
             <tr v-for="m in items" :key="m.id" class="click" @click="$router.push('/members/' + m.id)">
-              <td><strong>{{ m.membership_no }}</strong></td>
-              <td>{{ m.name }}<div v-if="m.school" class="muted small">{{ m.school }}</div></td>
+              <td><span class="code-tag">{{ m.membership_no }}</span></td>
+              <td :title="m.school ? `${m.name} - ${m.school}` : m.name">{{ m.name }}</td>
               <td>{{ typeLabel(m.membership_type) }}</td>
-              <td>{{ m.telephone || '-' }}</td>
+              <td :title="m.telephone">{{ m.telephone || '-' }}</td>
               <td>{{ m.membership_type === 'LIFETIME' ? 'Life time' : fmtDate(m.expiry_date) }}</td>
-              <td>{{ m.borrowed_acc_nos || '-' }}</td>
+              <td :title="m.borrowed_acc_nos">{{ m.borrowed_acc_nos || '-' }}</td>
               <td>
                 <span v-if="!m.is_active" class="badge gray">Not active</span>
                 <span v-else-if="m.is_expired" class="badge red">Expired</span>
@@ -58,12 +62,13 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { Search, UserPlus } from 'lucide-vue-next'
 import Pager from '../components/Pager.vue'
 import { api } from '../api'
 import { MEMBERSHIP_TYPES, typeLabel } from '../constants'
 import { fmtDate } from '../utils'
+import { useFitPage } from '../fitPage'
 
 const q = ref('')
 const type = ref('')
@@ -71,16 +76,16 @@ const active = ref('')
 const items = ref([])
 const total = ref(0)
 const page = ref(1)
-const size = 25
+const listBox = ref(null)
+// As many rows as fit on screen; Previous / Next show the next set.
+const size = useFitPage(listBox, page, load)
 const loaded = ref(false)
 
 async function load(p = page.value) {
   page.value = p
-  const r = await api.get('/members', { q: q.value, membership_type: type.value, active: active.value, page: p, size })
+  const r = await api.get('/members', { q: q.value, membership_type: type.value, active: active.value, page: p, size: size.value })
   items.value = r.items
   total.value = r.total
   loaded.value = true
 }
-
-onMounted(load)
 </script>

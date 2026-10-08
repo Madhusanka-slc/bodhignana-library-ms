@@ -4,13 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
+from ..config import settings
 from ..database import get_db
+from ..images import delete_picture, picture_response, save_picture
 from ..models import Member, Payment, User
-from ..schemas import LoanOut, MemberIn, MemberOut, MemberPage, PaymentOut, RenewIn
-from ..services import (add_years, get_settings, member_search_filter, next_membership_no,
+from ..schemas import LoanOut, MemberIn, MemberOut, MemberPage, PaymentOut, PictureIn, RenewIn
+from ..services import (add_years, get_settings, log_action, member_search_filter, next_membership_no,
                         num, record_payment)
 
 router = APIRouter(prefix="/api/members", tags=["members"])
+photos = APIRouter(prefix="/api/photos", tags=["members"])
+PHOTO_MAX = (480, 600)  # pixels; member photos are stored no larger than this
 
 
 def get_member_or_404(db: Session, member_id: int) -> Member:
@@ -59,10 +63,13 @@ def _apply(db: Session, m: Member, data: MemberIn, st: dict, is_new: bool):
 
 
 @router.post("", response_model=MemberOut)
-def create_member(data: MemberIn, db: Session = Depends(get_db), _: User = Depends(current_user)):
+def create_member(data: MemberIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     m = Member()
     _apply(db, m, data, get_settings(db), is_new=True)
+    m.created_by = user.display_name
     db.add(m)
+    db.flush()
+    log_action(db, user, "member_add", f"Registered {m.name} ({m.membership_type.title()})", "member", m.id, m.membership_no)
     db.commit()
     db.refresh(m)
     return m
@@ -70,9 +77,15 @@ def create_member(data: MemberIn, db: Session = Depends(get_db), _: User = Depen
 
 @router.put("/{member_id}", response_model=MemberOut)
 def update_member(member_id: int, data: MemberIn, db: Session = Depends(get_db),
-                  _: User = Depends(current_user)):
+                  user: User = Depends(current_user)):
     m = get_member_or_404(db, member_id)
+    was_active = m.is_active
     _apply(db, m, data, get_settings(db), is_new=False)
+    if was_active != m.is_active:
+        log_action(db, user, "member_edit", f"Made {m.name} {'active' if m.is_active else 'not active'}",
+                   "member", m.id, m.membership_no)
+    else:
+        log_action(db, user, "member_edit", f"Edited member {m.name}", "member", m.id, m.membership_no)
     db.commit()
     db.refresh(m)
     return m
@@ -93,6 +106,35 @@ def member_detail(member_id: int, db: Session = Depends(get_db), _: User = Depen
     }
 
 
+# ---------- Member photo (optional) ----------
+@router.post("/{member_id}/photo", response_model=MemberOut)
+def set_photo(member_id: int, data: PictureIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    m = get_member_or_404(db, member_id)
+    name = save_picture(data.image, settings.PHOTOS_DIR, m.id, PHOTO_MAX)
+    delete_picture(settings.PHOTOS_DIR, m.photo_image)
+    m.photo_image = name
+    log_action(db, user, "member_photo", f"Set the photo of {m.name}", "member", m.id, m.membership_no)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+@router.delete("/{member_id}/photo", response_model=MemberOut)
+def remove_photo(member_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    m = get_member_or_404(db, member_id)
+    delete_picture(settings.PHOTOS_DIR, m.photo_image)
+    m.photo_image = ""
+    log_action(db, user, "member_photo", f"Removed the photo of {m.name}", "member", m.id, m.membership_no)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+@photos.get("/{name}")
+def photo_file(name: str):
+    return picture_response(settings.PHOTOS_DIR, name)
+
+
 @router.post("/{member_id}/renew")
 def renew_membership(member_id: int, data: RenewIn, db: Session = Depends(get_db),
                      user: User = Depends(current_user)):
@@ -107,6 +149,10 @@ def renew_membership(member_id: int, data: RenewIn, db: Session = Depends(get_db
     if data.fee and data.fee > 0:
         payment = record_payment(db, m, data.fee, "MEMBERSHIP", user,
                                  notes=f"Membership renewal ({data.years} year)")
+    until = "life time" if m.membership_type == "LIFETIME" else m.expiry_date.isoformat()
+    log_action(db, user, "member_renew", f"Renewed the membership of {m.name} until {until}"
+               + (f", fee Rs. {float(data.fee):.2f} (receipt {payment.receipt_no})" if payment else ""),
+               "member", m.id, m.membership_no)
     db.commit()
     return {
         "member": MemberOut.model_validate(m),

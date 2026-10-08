@@ -7,6 +7,7 @@
     <div v-if="m" class="id-card">
       <div class="head">{{ s.library_name }}<span>Membership card</span></div>
       <div class="body">
+        <img v-if="m.photo_url" :src="m.photo_url" class="photo" alt="Photo" />
         <div class="txt">
           <div class="name">{{ m.name }}</div>
           <div><b>No:</b> {{ m.membership_no }}</div>
@@ -52,5 +53,6 @@ onMounted(async () => {
 .txt { flex: 1; min-width: 0; }
 .name { font-size: 11pt; font-weight: 700; margin-bottom: 1mm; }
 img { width: 27mm; height: 27mm; }
+.photo { width: 20mm; height: 25mm; object-fit: cover; border: 1px solid #b1b8cd; border-radius: 1.5mm; }
 .foot { font-size: 6.5pt; text-align: center; padding: 1mm; border-top: 1px solid #dde3f4; color: #333; }
 </style>

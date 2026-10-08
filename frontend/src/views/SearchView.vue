@@ -25,11 +25,14 @@
     <div v-if="members.length" class="card">
       <h2>Members ({{ members.length }})</h2>
       <div v-for="m in members" :key="m.id" class="result">
-        <div>
+        <div class="result-book">
+          <router-link :to="'/members/' + m.id" tabindex="-1"><MemberPhoto :src="m.photo_url" :name="m.name" size="sm" /></router-link>
+          <div>
           <h3><router-link :to="'/members/' + m.id">{{ m.name }}</router-link></h3>
           <div class="meta">{{ m.membership_no }} · {{ typeLabel(m.membership_type) }} · {{ m.telephone || 'no phone' }}</div>
           <div v-if="!m.is_active" class="badge gray mt">Not active</div>
           <div v-else-if="m.is_expired" class="badge red mt">Membership expired</div>
+          </div>
         </div>
         <div class="where" :class="m.borrowed_acc_nos ? 'orange' : 'gray'">
           <strong>{{ m.borrowed_acc_nos ? 'Has books now' : 'No books with this member' }}</strong>
@@ -44,13 +47,16 @@
         <span class="badge green">{{ availableCount }} in the library now</span>
       </div>
       <div v-for="b in books" :key="b.id" class="result">
-        <div>
+        <div class="result-book">
+          <router-link :to="'/books/' + b.id" tabindex="-1"><BookCover :src="b.cover_url" :title="b.title" size="sm" /></router-link>
+          <div>
           <h3><router-link :to="'/books/' + b.id">{{ b.title }}</router-link></h3>
           <div v-if="b.sinhala_title || b.tamil_title" class="meta">{{ [b.sinhala_title, b.tamil_title].filter(Boolean).join(' / ') }}</div>
           <div class="meta">
             {{ b.persons || 'Unknown author' }}<span v-if="b.year_of_publication"> · {{ b.year_of_publication }}</span>
           </div>
           <div class="meta">Acc. No. <strong>{{ b.acc_no }}</strong> · {{ b.section || 'No section' }}<span v-if="b.call_no"> · Call No. {{ b.call_no }}</span></div>
+          </div>
         </div>
         <div class="where" :class="where(b).cls">
           <strong>{{ where(b).title }}</strong>
@@ -63,6 +69,8 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import BookCover from '../components/BookCover.vue'
+import MemberPhoto from '../components/MemberPhoto.vue'
 import ScanBox from '../components/ScanBox.vue'
 import { api } from '../api'
 import { SECTIONS, typeLabel } from '../constants'

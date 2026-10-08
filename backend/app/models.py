@@ -63,10 +63,16 @@ class Member(Base):
     guarantor_address: Mapped[str] = txt()
     school: Mapped[str] = txt(200)
     notes: Mapped[str] = txt()
+    photo_image: Mapped[str] = txt(200)  # file name of the member's photo, '' if none
+    created_by: Mapped[str] = txt(100)  # staff member who registered this member
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     loans: Mapped[list["Loan"]] = relationship(back_populates="member", order_by="Loan.id.desc()")
+
+    @property
+    def photo_url(self) -> Optional[str]:
+        return f"/api/photos/{self.photo_image}" if self.photo_image else None
 
     @property
     def age(self) -> Optional[int]:
@@ -140,6 +146,7 @@ class Book(Base):
     user_code: Mapped[str] = txt(50)
     rack_no: Mapped[str] = txt(30)
     shelf_no: Mapped[str] = txt(30)
+    cover_image: Mapped[str] = txt(200)  # file name of the front cover picture, '' if none
     status: Mapped[str] = mapped_column(String(20), default=AVAILABLE, index=True)
     withdrawn: Mapped[bool] = mapped_column(Boolean, default=False)
     withdrawn_by: Mapped[str] = txt(100)
@@ -179,6 +186,10 @@ class Book(Base):
         return cl.member.membership_no if cl else None
 
     @property
+    def cover_url(self) -> Optional[str]:
+        return f"/api/covers/{self.cover_image}" if self.cover_image else None
+
+    @property
     def location(self) -> str:
         parts = []
         if self.rack_no:
@@ -197,6 +208,7 @@ class Loan(Base):
     issue_date: Mapped[date] = mapped_column(Date, default=date.today)
     due_date: Mapped[date] = mapped_column(Date)
     return_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
+    returned_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # when the return was entered
     issued_by: Mapped[str] = txt(100)
     returned_by: Mapped[str] = txt(100)
     is_damaged: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -263,6 +275,22 @@ class Payment(Base):
     @property
     def book_title(self) -> Optional[str]:
         return self.loan.book.title if self.loan else None
+
+
+class AuditLog(Base):
+    """Who did what and when: one row for every action a staff member takes."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    user_name: Mapped[str] = txt(120)  # the staff member's name at that time
+    action: Mapped[str] = mapped_column(String(30), index=True)  # e.g. issue, return, book_add
+    entity: Mapped[str] = txt(20)  # book, member, loan, payment, holiday, settings, user
+    entity_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ref: Mapped[str] = txt(60)  # Acc. No., Membership No. or receipt No.
+    summary: Mapped[str] = txt()
 
 
 class Holiday(Base):

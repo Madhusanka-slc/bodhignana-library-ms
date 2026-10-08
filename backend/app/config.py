@@ -7,6 +7,8 @@ class Settings:
     TOKEN_HOURS = int(os.getenv("TOKEN_HOURS", "12"))
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+    COVERS_DIR = os.getenv("COVERS_DIR", os.path.join(os.getcwd(), "data", "covers"))  # book cover pictures
+    PHOTOS_DIR = os.getenv("PHOTOS_DIR", os.path.join(os.getcwd(), "data", "photos"))  # member photos
 
 
 settings = Settings()

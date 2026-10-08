@@ -1,4 +1,4 @@
-import { typeLabel, PAYMENT_TYPES } from './constants'
+import { typeLabel, statusLabel, PAYMENT_TYPES } from './constants'
 
 export function fmtDate(d) {
   if (!d) return '-'
@@ -13,7 +13,7 @@ export function fmtDateTime(d) {
   return x.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-export const money = (v) => 'Rs. ' + Number(v || 0).toFixed(2)
+export const money = (v) => 'Rs. ' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export function isoDate(d = new Date()) {
   const p = (n) => String(n).padStart(2, '0')
@@ -31,6 +31,7 @@ export function formatCell(value, kind) {
   if (kind === 'money') return money(value)
   if (kind === 'type') return typeLabel(value)
   if (kind === 'ptype') return PAYMENT_TYPES[value] || value
+  if (kind === 'status') return statusLabel(value)
   if (kind === 'bool') return value ? 'Yes' : 'No'
   return value
 }
@@ -46,6 +47,24 @@ export function exportCsv(filename, columns, rows) {
   a.download = filename + '.csv'
   a.click()
   URL.revokeObjectURL(a.href)
+}
+
+// Make a chosen photo smaller in the browser before uploading; returns a JPEG data URL.
+export function shrinkImage(file, maxW, maxH) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, maxW / img.width, maxH / img.height)
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * scale)
+      c.height = Math.round(img.height * scale)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      URL.revokeObjectURL(img.src)
+      resolve(c.toDataURL('image/jpeg', 0.85))
+    }
+    img.onerror = () => reject(new Error('This file is not a picture. Please choose a JPG or PNG photo.'))
+    img.src = URL.createObjectURL(file)
+  })
 }
 
 export function openPrint(path) {

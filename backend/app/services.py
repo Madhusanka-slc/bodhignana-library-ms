@@ -1,12 +1,13 @@
 """Business rules: settings, due dates, fines, numbering."""
 from datetime import date, timedelta
+from typing import Optional
 from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from .models import AppSetting, Book, Holiday, Member, Payment, User, dec
+from .models import AppSetting, AuditLog, Book, Holiday, Member, Payment, User, dec
 
 DEFAULT_SETTINGS = {
     "library_name": "Public Library",
@@ -27,6 +28,13 @@ DEFAULT_SETTINGS = {
     "non_lending_sections": "Reference",
     "receipt_footer": "Thank you. Please keep this receipt.",
 }
+
+
+def log_action(db: Session, user: Optional[User], action: str, summary: str,
+               entity: str = "", entity_id: Optional[int] = None, ref: str = ""):
+    """Record who did what. Saved together with the change itself (same commit)."""
+    db.add(AuditLog(user_id=user.id if user else None, user_name=user.display_name if user else "",
+                    action=action, entity=entity, entity_id=entity_id, ref=ref or "", summary=summary))
 
 
 def get_settings(db: Session) -> dict:

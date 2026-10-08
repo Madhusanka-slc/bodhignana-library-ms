@@ -23,7 +23,12 @@ services:
       SECRET_KEY: ${SECRET_KEY:-please-change-this-to-a-long-random-secret-value}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      COVERS_DIR: /app/data/covers
+      PHOTOS_DIR: /app/data/photos
       TZ: Asia/Colombo
+    volumes:
+      - covers:/app/data/covers
+      - photos:/app/data/photos
     depends_on:
       db:
         condition: service_healthy
@@ -38,3 +43,5 @@ services:
 
 volumes:
   pgdata:
+  covers:
+  photos:

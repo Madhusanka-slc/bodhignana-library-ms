@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +10,7 @@ from ..database import get_db
 from ..models import AVAILABLE, DAMAGED, ISSUED, Book, Loan, Member, User
 from ..schemas import BookOut, IssueIn, LoanOut, MemberOut, PaymentOut, ReturnIn
 from ..services import (calc_late, compute_due_date, damage_fine_for, find_book_by_code,
-                        find_member_by_code, get_settings, max_books_for, non_lending_sections,
+                        find_member_by_code, get_settings, log_action, max_books_for, non_lending_sections,
                         num, record_payment)
 
 router = APIRouter(prefix="/api/circulation", tags=["issue & return"])
@@ -109,6 +109,10 @@ def issue_books(data: IssueIn, db: Session = Depends(get_db), user: User = Depen
         b.status = ISSUED
         db.add(loan)
         loans.append(loan)
+    db.flush()
+    for loan in loans:
+        log_action(db, user, "issue", f"Issued \"{loan.book.title}\" to {m.name} ({m.membership_no}), due {due}",
+                   "loan", loan.id, loan.book.acc_no)
     db.commit()
     return {"due_date": due, "loans": [LoanOut.model_validate(l) for l in loans]}
 
@@ -155,6 +159,7 @@ def return_book(data: ReturnIn, db: Session = Depends(get_db), user: User = Depe
     returned = data.return_date or date.today()
     f = _fines(db, loan, returned, data.damaged, st)
     loan.return_date = returned
+    loan.returned_at = datetime.now()
     loan.returned_by = user.display_name
     loan.is_damaged = data.damaged
     loan.late_days = f["late_days"]
@@ -173,6 +178,15 @@ def return_book(data: ReturnIn, db: Session = Depends(get_db), user: User = Depe
             ptype = "LATE_FINE"
         payment = record_payment(db, loan.member, f["total"], ptype, user, loan=loan,
                                  notes=f"{f['late_days']} late day(s)" + (", damaged" if data.damaged else ""))
+    detail = []
+    if f["late_days"]:
+        detail.append(f"{f['late_days']} day(s) late")
+    if data.damaged:
+        detail.append("damaged")
+    if f["total"]:
+        detail.append(f"fine Rs. {f['total']:.2f}" + (f" paid (receipt {payment.receipt_no})" if payment else " not paid"))
+    log_action(db, user, "return", f"Returned \"{loan.book.title}\" from {loan.member.name} ({loan.member.membership_no})"
+               + (" - " + ", ".join(detail) if detail else ", on time"), "loan", loan.id, loan.book.acc_no)
     db.commit()
     db.refresh(loan)
     return {
@@ -183,7 +197,7 @@ def return_book(data: ReturnIn, db: Session = Depends(get_db), user: User = Depe
 
 
 @router.post("/renew/{loan_id}")
-def renew_loan(loan_id: int, db: Session = Depends(get_db), _: User = Depends(current_user)):
+def renew_loan(loan_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """Give the member more time with the same book."""
     loan = db.get(Loan, loan_id)
     if not loan or loan.return_date:
@@ -191,5 +205,7 @@ def renew_loan(loan_id: int, db: Session = Depends(get_db), _: User = Depends(cu
     if loan.is_overdue:
         raise HTTPException(400, "This book is overdue. Please return it and pay the fine first.")
     loan.due_date = compute_due_date(db, date.today(), get_settings(db))
+    log_action(db, user, "renew_loan", f"Gave {loan.member.name} more time for \"{loan.book.title}\", new due date {loan.due_date}",
+               "loan", loan.id, loan.book.acc_no)
     db.commit()
     return LoanOut.model_validate(loan)
