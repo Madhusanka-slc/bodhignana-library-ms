@@ -9,7 +9,12 @@
       <div class="filters">
         <div class="grow">
           <label for="mq">Search</label>
-          <input id="mq" v-model="q" placeholder="Name, membership no., NIC, phone or school" @keydown.enter="load(1)" />
+          <div class="live-search">
+            <Search :size="17" />
+            <input id="mq" v-model="q" placeholder="Start typing a name, membership no., NIC, phone or school" autocomplete="off"
+                   @input="search.soon" @keydown.enter="search.now" />
+            <button v-if="q" type="button" class="live-clear" title="Clear" @click="q = ''; search.now()"><X :size="16" /></button>
+          </div>
         </div>
         <div>
           <label for="mt">Membership type</label>
@@ -26,17 +31,24 @@
             <option value="false">Not active</option>
           </select>
         </div>
-        <button class="btn primary" @click="load(1)"><Search :size="16" /> Search</button>
+        <div>
+          <label for="mc">Member card</label>
+          <select id="mc" v-model="card" @change="load(1)">
+            <option value="">All</option>
+            <option value="yes">Card given</option>
+            <option value="no">Card not given</option>
+          </select>
+        </div>
       </div>
 
       <div ref="listBox" class="table-wrap list-scroll list-fit">
         <table class="table fit-table">
           <colgroup>
             <col style="width: 104px" /><col /><col style="width: 92px" /><col style="width: 150px" />
-            <col style="width: 116px" /><col style="width: 170px" /><col style="width: 116px" />
+            <col style="width: 116px" /><col style="width: 150px" /><col style="width: 110px" /><col style="width: 64px" />
           </colgroup>
           <thead>
-            <tr><th>Member No.</th><th>Name</th><th>Type</th><th>Telephone</th><th>Expiry date</th><th>Books now (Acc. No/s)</th><th>Status</th></tr>
+            <tr><th>Member No.</th><th>Name</th><th>Type</th><th>Telephone</th><th>Expiry date</th><th>Books now (Acc. No/s)</th><th>Status</th><th class="icon-col">Card</th></tr>
           </thead>
           <tbody>
             <tr v-for="m in items" :key="m.id" class="click" @click="$router.push('/members/' + m.id)">
@@ -51,6 +63,9 @@
                 <span v-else-if="m.is_expired" class="badge red">Expired</span>
                 <span v-else class="badge green">Active</span>
               </td>
+              <td class="icon-col"><span class="done-mark" :class="{ done: m.card_done }" role="img"
+                    :title="m.card_done ? 'Member card given' : 'Member card not given yet'" :aria-label="m.card_done ? 'Member card given' : 'Member card not given yet'">
+                <component :is="m.card_done ? CircleCheck : CircleDashed" :size="19" /></span></td>
             </tr>
           </tbody>
         </table>
@@ -63,16 +78,18 @@
 
 <script setup>
 import { ref } from 'vue'
-import { Search, UserPlus } from 'lucide-vue-next'
+import { CircleCheck, CircleDashed, Search, UserPlus, X } from 'lucide-vue-next'
 import Pager from '../components/Pager.vue'
 import { api } from '../api'
 import { MEMBERSHIP_TYPES, typeLabel } from '../constants'
 import { fmtDate } from '../utils'
 import { useFitPage } from '../fitPage'
+import { latestOnly, useLiveSearch } from '../liveSearch'
 
 const q = ref('')
 const type = ref('')
 const active = ref('')
+const card = ref('')
 const items = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -80,10 +97,14 @@ const listBox = ref(null)
 // As many rows as fit on screen; Previous / Next show the next set.
 const size = useFitPage(listBox, page, load)
 const loaded = ref(false)
+// The list updates while you type (a moment after the last key), starting again from page 1.
+const search = useLiveSearch(() => load(1))
 
+const fetchMembers = latestOnly((params) => api.get('/members', params))
 async function load(p = page.value) {
   page.value = p
-  const r = await api.get('/members', { q: q.value, membership_type: type.value, active: active.value, page: p, size: size.value })
+  const r = await fetchMembers({ q: q.value, membership_type: type.value, active: active.value, card: card.value, page: p, size: size.value })
+  if (!r) return // a newer search has already answered
   items.value = r.items
   total.value = r.total
   loaded.value = true

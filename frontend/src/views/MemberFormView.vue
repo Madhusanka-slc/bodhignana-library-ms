@@ -43,7 +43,7 @@
         <!-- 2. Membership -->
         <template v-else-if="step === 1">
           <h2>Membership</h2>
-          <p class="muted step-help">Choose the kind of membership. The number and expiry date are filled in automatically if you leave them empty.</p>
+          <p class="muted step-help">Choose the kind of membership. The membership number and the expiry date are worked out by the system.</p>
           <label>Membership type <span class="req">*</span></label>
           <div class="choice-grid" role="radiogroup">
             <button v-for="t in TYPE_CHOICES" :key="t.value" type="button" role="radio" :aria-checked="m.membership_type === t.value"
@@ -51,6 +51,25 @@
               <span class="dot"></span>
               <span><strong>{{ t.label }}</strong><small>{{ t.hint }}</small></span>
             </button>
+          </div>
+          <!-- Worked out by the system: the number (given when saving) and the expiry date -->
+          <div class="auto-tiles">
+            <div v-if="!isEdit" class="auto-tile">
+              <Hash :size="20" />
+              <span>
+                <small>Membership No.</small>
+                <strong>{{ nextNo || '…' }}</strong>
+                <small>Next number. It is given when you save.</small>
+              </span>
+            </div>
+            <div class="auto-tile">
+              <CalendarClock :size="20" />
+              <span>
+                <small>Expiry date</small>
+                <strong>{{ m.membership_type === 'LIFETIME' ? 'Never' : m.expiry_date ? fmtDate(m.expiry_date) : 'Not set' }}</strong>
+                <small>{{ expiryHelp }}</small>
+              </span>
+            </div>
           </div>
           <FormGrid class="mt" :fields="memberFields" :model="m" />
         </template>
@@ -104,14 +123,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Check, ChevronLeft, ChevronRight, Pencil, Printer, Save, User, UserPlus } from 'lucide-vue-next'
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Hash, Pencil, Printer, Save, User, UserPlus } from 'lucide-vue-next'
 import FormGrid from '../components/FormGrid.vue'
 import MemberPhoto from '../components/MemberPhoto.vue'
 import PictureUpload from '../components/PictureUpload.vue'
 import { api } from '../api'
-import { toast } from '../store'
+import { appSettings, toast } from '../store'
 import { MEMBERSHIP_TYPES, typeLabel } from '../constants'
 import { fmtDate, isoDate, openPrint } from '../utils'
 
@@ -152,13 +171,34 @@ const mainFields = [
   { key: 'school', label: 'School' },
   { key: 'address', label: 'Address', type: 'textarea', wide: true },
 ]
-const memberFields = [
-  { key: 'membership_no', label: 'Membership No.', help: 'Leave empty to create a number automatically' },
+// A new member has no number to type and no renewal yet; both can be corrected later on Edit.
+const memberFields = computed(() => [
+  ...(isEdit.value ? [{ key: 'membership_no', label: 'Membership No.' }] : []),
   { key: 'registered_date', label: 'Registered on', type: 'date' },
-  { key: 'expiry_date', label: 'Expiry date', type: 'date', help: 'Leave empty to set automatically' },
-  { key: 'renewal_date', label: 'Membership renewal date', type: 'date' },
+  ...(isEdit.value ? [
+    { key: 'renewal_date', label: 'Last renewed on', type: 'date', help: 'The day the member renewed. The expiry date is counted from it.' },
+    { key: 'expiry_date', label: 'Expiry date', type: 'date', help: 'Worked out when you change the type or a date above. You can correct it.' },
+  ] : []),
   { key: 'notes', label: 'Notes', type: 'textarea', wide: true },
-]
+])
+
+// Expiry date = last renewal (or, if never renewed, the registration date) + the period for the type.
+const nextNo = ref('')
+const years = computed(() => Number(appSettings[`membership_years_${(m.membership_type || '').toLowerCase()}`] ?? appSettings.membership_years ?? 3) || 3)
+function workOutExpiry() {
+  const start = m.renewal_date || m.registered_date
+  if (m.membership_type === 'LIFETIME' || !start) return ''
+  const d = new Date(start + 'T00:00:00')
+  const day = d.getDate()
+  d.setFullYear(d.getFullYear() + years.value)
+  if (d.getDate() !== day) d.setDate(0) // 29 Feb -> 28 Feb
+  return isoDate(d)
+}
+const expiryHelp = computed(() => {
+  if (m.membership_type === 'LIFETIME') return 'Life Time membership does not expire.'
+  if (!m.expiry_date) return (m.renewal_date || m.registered_date) ? 'Not set for this member. Change the type or a date below to work it out.' : 'No registration date, so no expiry date.'
+  return `${years.value} year${years.value === 1 ? '' : 's'} for ${typeLabel(m.membership_type)}, from the ${m.renewal_date ? 'last renewal' : 'registration'} date`
+})
 const guarantorFields = [
   { key: 'guarantor_name', label: 'Guarantor name', wide: true },
   { key: 'guarantor_address', label: 'Guarantor address', type: 'textarea', wide: true },
@@ -168,9 +208,9 @@ const guarantorFields = [
 const review = computed(() => [
   { title: 'Member details', rows: [['Name', m.name], ['NIC No.', m.nic_no], ['Birthday', m.birthday && fmtDate(m.birthday)],
     ['Telephone', m.telephone], ['Email', m.email], ['School', m.school], ['Address', m.address]] },
-  { title: 'Membership', rows: [['Type', typeLabel(m.membership_type)], ['Membership No.', m.membership_no || 'Created automatically'],
+  { title: 'Membership', rows: [['Type', typeLabel(m.membership_type)], ['Membership No.', m.membership_no || (nextNo.value ? `${nextNo.value} (next number, given when you save)` : 'Given when you save')],
     ['Registered on', m.registered_date && fmtDate(m.registered_date)],
-    ['Expiry date', m.membership_type === 'LIFETIME' ? 'Never' : (m.expiry_date ? fmtDate(m.expiry_date) : 'Set automatically')],
+    ['Expiry date', m.membership_type === 'LIFETIME' ? 'Never' : (m.expiry_date ? fmtDate(m.expiry_date) : 'Not set')],
     ['Notes', m.notes]] },
   { title: 'Guarantor', rows: [['Name', m.guarantor_name], ['Address', m.guarantor_address]] },
 ])
@@ -193,10 +233,19 @@ function goTo(i) {
 
 function startAgain() {
   Object.assign(m, blank())
+  loadNextNo()
   photo.value = { image: null, removed: false }
   savedPhoto.value = null
   saved.value = null
   step.value = 0
+}
+
+async function loadNextNo() {
+  try {
+    nextNo.value = (await api.get('/members/next-no')).membership_no
+  } catch {
+    nextNo.value = ''
+  }
 }
 
 onMounted(async () => {
@@ -204,8 +253,18 @@ onMounted(async () => {
     const r = await api.get(`/members/${route.params.id}`)
     Object.keys(m).forEach((k) => { m[k] = r.member[k] ?? '' })
     savedPhoto.value = r.member.photo_url
+    await nextTick()
+  } else {
+    m.expiry_date = workOutExpiry()
+    loadNextNo()
   }
+  ready = true
 })
+
+// Changing the type or one of the dates works the expiry date out again.
+// (Just opening an old member for another edit leaves their expiry date as it is.)
+let ready = false
+watch(() => [m.membership_type, m.registered_date, m.renewal_date], () => { if (ready) m.expiry_date = workOutExpiry() })
 
 async function save() {
   error.value = ''

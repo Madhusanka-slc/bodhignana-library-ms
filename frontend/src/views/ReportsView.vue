@@ -3,12 +3,29 @@
     <div class="page-head">
       <div>
         <h1>Reports</h1>
-        <p class="sub">Choose a tab, pick a report, set filters and press Show report. Empty filters include everything.</p>
+        <p class="sub">{{ picking ? 'Pick a report to open it.' : 'Set filters and press Show report. Empty filters include everything.' }}</p>
+      </div>
+      <router-link v-if="!picking" to="/reports" class="btn"><LayoutGrid :size="16" /> All reports</router-link>
+    </div>
+
+    <!-- All reports: one numbered tile per report, coloured by group -->
+    <div v-if="picking" class="tile-page">
+      <div class="tile-legend">
+        <button class="chip" :class="{ on: !pickGroup }" @click="pickGroup = ''">All <span class="chip-n">{{ REPORTS.length }}</span></button>
+        <button v-for="g in GROUPS" :key="g.key" class="chip" :class="{ on: pickGroup === g.key }" @click="pickGroup = pickGroup === g.key ? '' : g.key">
+          <i class="tile-dot" :class="'g-' + g.key"></i>{{ g.title }} <span class="chip-n">{{ REPORTS.filter((r) => r.group === g.key).length }}</span>
+        </button>
+      </div>
+      <div class="tile-grid">
+        <router-link v-for="t in tiles" :key="t.key" :to="{ path: '/reports', query: { r: t.key } }" class="num-tile" :title="t.desc">
+          <span class="num-badge" :class="'g-' + t.group">{{ t.no }}</span>
+          <span class="num-text"><strong>{{ t.title }}</strong><small>{{ t.sub }}</small></span>
+        </router-link>
       </div>
     </div>
 
     <!-- 1. Report groups as tabs -->
-    <div class="report-tabs" role="tablist">
+    <div v-if="!picking" class="report-tabs" role="tablist">
       <button v-for="g in GROUPS" :key="g.key" role="tab" class="report-tab" :class="{ on: current.group === g.key }"
               :aria-selected="current.group === g.key" @click="selectGroup(g)">
         <component :is="g.icon" :size="18" /> {{ g.title }}
@@ -16,7 +33,7 @@
       </button>
     </div>
 
-    <div class="card list-card report-card">
+    <div v-if="!picking" class="card list-card report-card">
       <!-- 2. Reports in the selected tab -->
       <div class="report-chips">
         <button v-for="r in groupReports" :key="r.key" class="report-chip" :class="{ on: current.key === r.key }" @click="select(r)">
@@ -74,8 +91,12 @@
           <thead><tr><th v-for="c in columns" :key="c.key" :class="{ num: isNum(c) }" :title="c.label">{{ c.label }}</th></tr></thead>
           <tbody>
             <tr v-for="(r, i) in rows" :key="i" :class="{ click: !!link(r) }" @click="open(r)">
-              <td v-for="c in columns" :key="c.key" :class="{ num: isNum(c), label: c.key === 'group' }" :title="cell(r, c)">
+              <td v-for="c in columns" :key="c.key" :class="{ num: isNum(c), label: c.key === 'group' || r.is_total, totalrow: r.is_total }" :title="cell(r, c)">
                 <span v-if="CODES.has(c.key) && getPath(r, c.key)" class="code-tag">{{ getPath(r, c.key) }}</span>
+                <span v-else-if="c.kind === 'done'" class="done-mark" :class="{ done: getPath(r, c.key) }">{{ getPath(r, c.key) ? 'Done' : 'Not yet' }}</span>
+                <span v-else-if="c.kind === 'progress'" class="prog" :title="`${r.done} of ${r.total} done`">
+                  <span class="prog-bar"><i :style="{ width: r.percent + '%' }"></i></span><b>{{ r.percent }}%</b>
+                </span>
                 <template v-else>{{ cell(r, c) }}</template>
               </td>
             </tr>
@@ -145,7 +166,7 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeftRight, BookOpen, Download, FileText, Play, Printer, SlidersHorizontal, Users, Wallet, X } from 'lucide-vue-next'
+import { ArrowLeftRight, BookOpen, Download, FileText, LayoutGrid, Play, Printer, SlidersHorizontal, Users, Wallet, X } from 'lucide-vue-next'
 import DateInput from '../components/DateInput.vue'
 import { api } from '../api'
 import { appSettings } from '../store'
@@ -173,7 +194,7 @@ api.get('/reports/staff-list').then((list) => STAFF_OPTS.push(...list.map((u) =>
 const ACTION_LABELS = {
   issue: 'Issued a book', return: 'Returned a book', renew_loan: 'Gave more time', payment: 'Took a payment',
   member_add: 'Registered a member', member_edit: 'Edited a member', member_photo: 'Member photo', member_renew: 'Renewed membership',
-  book_add: 'Added a book', book_edit: 'Edited a book', book_cover: 'Book cover', book_status: 'Book status',
+  book_add: 'Added a book', book_edit: 'Edited a book', book_cover: 'Book cover', book_status: 'Book status', book_label: 'QR label', member_card: 'Member card',
   holiday: 'Holidays', settings: 'Settings', user: 'Staff account', login: 'Signed in',
 }
 const ACTION_OPTS = [{ value: '', label: 'All actions' }, ...[
@@ -203,12 +224,12 @@ const bookCols = [
   col('acc_no', 'Acc. No.'), col('title', 'Title'), col('persons', 'Author'), csvOnly(col('publisher', 'Publisher')),
   csvOnly(col('year_of_publication', 'Year')), col('section', 'Section'), col('call_no', 'Call No.'),
   csvOnly(col('price', 'Price', 'money')), col('status', 'Status', 'status'), csvOnly(col('date_entered', 'Date entered', 'date')),
-  csvOnly(col('isbn', 'ISBN')),
+  csvOnly(col('isbn', 'ISBN')), col('label_done', 'QR label', 'done'),
 ]
 const memberCols = [
   col('membership_no', 'Member No.'), col('name', 'Name'), col('membership_type', 'Type', 'type'), col('age', 'Age', null, true),
   col('telephone', 'Telephone'), csvOnly(col('address', 'Address')), col('school', 'School'),
-  col('registered_date', 'Registered', 'date'), col('expiry_date', 'Expiry', 'date'), csvOnly(col('nic_no', 'NIC No.')),
+  col('registered_date', 'Registered', 'date'), col('expiry_date', 'Expiry', 'date'), csvOnly(col('nic_no', 'NIC No.')), col('card_done', 'Card', 'done'),
 ]
 const loanCols = [
   col('book.acc_no', 'Acc. No.'), col('book.title', 'Title'), col('book.section', 'Section'),
@@ -234,6 +255,7 @@ const REPORTS = [
       P.section,
       { key: 'status', label: 'Status', type: 'select', default: '', options: STATUS_OPTS },
       { key: 'subject', label: 'Subject (class No.)', type: 'select', default: '', options: SUBJECT_OPTS },
+      { key: 'label', label: 'QR label', type: 'select', default: '', options: opt([{ value: '', label: 'All' }, { value: 'yes', label: 'Labelled' }, { value: 'no', label: 'Not labelled' }]) },
       { key: 'sort', label: 'Order by', type: 'select', default: 'acc_no', options: opt([{ value: 'acc_no', label: 'Acc. No.' }, { value: 'title', label: 'Title' }, { value: 'newest', label: 'Newest first' }]) },
       { key: 'entered_from', label: 'Entered from', type: 'date', default: '' },
       { key: 'entered_to', label: 'Entered to', type: 'date', default: '' },
@@ -288,6 +310,7 @@ const REPORTS = [
       { key: 'expiry', label: 'Membership', type: 'select', default: '', options: opt([{ value: '', label: 'Any' }, { value: 'valid', label: 'Valid' },
         { value: 'expiring', label: 'Expiring in 30 days' }, { value: 'expired', label: 'Expired' }, { value: 'none', label: 'No expiry date' }]) },
       { key: 'school', label: 'School', type: 'text', default: '' },
+      { key: 'card', label: 'Member card', type: 'select', default: '', options: opt([{ value: '', label: 'All' }, { value: 'yes', label: 'Card given' }, { value: 'no', label: 'Card not given' }]) },
       { key: 'min_age', label: 'Age from', type: 'number', default: '' },
       { key: 'max_age', label: 'Age to', type: 'number', default: '' },
       { key: 'registered_from', label: 'Registered from', type: 'date', default: '' },
@@ -363,6 +386,14 @@ const REPORTS = [
       { value: 'month', label: 'Month' }, { value: 'day', label: 'Day' }, { value: 'section', label: 'Section' }, { value: 'membership_type', label: 'Membership type' }]) }],
     columns: [col('group', 'Group', 'type'), col('issued', 'Issued', null, true), col('returned', 'Returned', null, true),
       col('late', 'Returned late', null, true), col('fines', 'Fines charged', 'money')] },
+  { group: 'other', key: 'label-progress', title: 'Labels & cards progress', url: '/reports/label-progress',
+    desc: 'How many books have their QR label and how many members have their card: done, remaining and percent.',
+    total: 'number', totalLabel: 'Done', unit: 'group(s)',
+    params: [{ key: 'what', label: 'Show', type: 'select', default: 'books_section', wide: true, options: opt([
+      { value: 'books_section', label: 'Book labels, by section' }, { value: 'books_subject', label: 'Book labels, by subject' },
+      { value: 'books_status', label: 'Book labels, by status' }, { value: 'members_type', label: 'Member cards, by membership type' }]) }],
+    columns: [col('group', 'Group', 'type'), col('total', 'Total', null, true), col('done', 'Done', null, true),
+      col('remaining', 'Remaining', null, true), col('percent', 'Progress', 'progress')] },
   { group: 'other', key: 'staff-activity', title: 'Staff activity', url: '/reports/staff-activity', limited: true,
     desc: 'Who did what and when: issues, returns, new members and books, changes, payments and sign-ins.', unit: 'action(s)',
     params: [
@@ -427,6 +458,15 @@ const flatParams = (r) => (r.params || []).flatMap((p) => (p.type === 'range' ? 
 // ---------- state ----------
 const route = useRoute()
 const router = useRouter()
+// Opening Reports without choosing one shows the grid of all reports.
+const picking = !REPORTS.some((r) => r.key === route.query.r)
+const pickGroup = ref('')
+const tiles = computed(() => REPORTS
+  .map((r, i) => ({
+    key: r.key, group: r.group, title: r.title, desc: r.desc, no: String(i + 1).padStart(2, '0'),
+    sub: `${GROUPS.find((g) => g.key === r.group).title} · ${r.params ? r.params.length + (r.params.length === 1 ? ' filter' : ' filters') : 'no filters'}`,
+  }))
+  .filter((t) => !pickGroup.value || t.group === pickGroup.value))
 const current = ref(REPORTS.find((r) => r.key === route.query.r) || REPORTS[0])
 const params = reactive({})
 const rows = ref([])
@@ -450,7 +490,8 @@ const isNum = (c) => c.kind === 'money' || c.num
 const FIXED = {
   age: '64px', year_of_publication: '72px', section: '110px', 'book.section': '110px', call_no: '130px',
   telephone: '124px', 'member.telephone': '124px', receipt_no: '130px', received_by: '130px',
-  at: '150px', user_name: '150px', action: '160px', ref: '130px',
+  at: '150px', user_name: '150px', action: '160px', ref: '130px', label_done: '92px', card_done: '92px', percent: '260px',
+  done: '110px', remaining: '120px', total: '110px',
   times: '120px', count: '80px', late_days: '90px', days_overdue: '90px', member_no: '110px', school: '150px', other: '150px', last_borrowed: '130px',
 }
 // Text columns need at least 200px; with many columns the table scrolls sideways instead of squeezing them.
@@ -470,6 +511,9 @@ function colWidth(c) {
 const cell = (r, c) => {
   const v = getPath(r, c.key)
   if (c.kind === 'action') return ACTION_LABELS[v] || v
+  if (c.key === 'group' && BOOK_STATUS[v]) return BOOK_STATUS[v].label
+  if (c.kind === 'done') return v ? 'Done' : 'Not yet'
+  if (c.kind === 'progress') return `${v}%`
   return c.num && typeof v === 'number' ? n(v) : formatCell(v, c.kind)
 }
 
@@ -522,6 +566,15 @@ async function exportAll() {
       exporting.value = false
     }
   }
+  // Done / not yet and percentages are written out in words, as on screen
+  const marks = current.value.columns.filter((c) => c.kind === 'done' || c.kind === 'progress')
+  if (marks.length) {
+    data = data.map((r) => {
+      const o = { ...r }
+      marks.forEach((c) => { o[c.key] = c.kind === 'done' ? (r[c.key] ? 'Done' : 'Not yet') : `${r[c.key]}%` })
+      return o
+    })
+  }
   // Action codes (issue, return ...) are written out in words, as on screen
   if (current.value.columns.some((c) => c.kind === 'action')) data = data.map((r) => ({ ...r, action: ACTION_LABELS[r.action] || r.action }))
   exportCsv(`${current.value.key}-${today}`, current.value.columns, data)
@@ -560,5 +613,5 @@ const onKey = (e) => { if (e.key === 'Escape') preview.value = false }
 watch(preview, (open) => (open ? window.addEventListener('keydown', onKey) : window.removeEventListener('keydown', onKey)))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
-select(current.value)
+if (!picking) select(current.value)
 </script>

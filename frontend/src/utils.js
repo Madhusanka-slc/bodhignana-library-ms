@@ -1,4 +1,5 @@
 import { typeLabel, statusLabel, PAYMENT_TYPES } from './constants'
+import { printJob } from './store'
 
 export function fmtDate(d) {
   if (!d) return '-'
@@ -67,6 +68,18 @@ export function shrinkImage(file, maxW, maxH) {
   })
 }
 
+// Show something to print in our own preview popup (Print / Cancel), instead of a new browser window
 export function openPrint(path) {
-  window.open(path, '_blank', 'width=900,height=700')
+  printJob.title = path.includes('/receipt/') ? (path.includes(',') ? 'Receipts' : 'Receipt')
+    : path.includes('/member-card/') ? 'Member card' : path.includes('/book-labels') ? 'Book QR labels' : 'Print'
+  printJob.path = path
+}
+
+// What is still unpaid for one borrowed book, in words: "Issue fee + Late (8 days) + Damaged"
+const DUE_WORDS = { issue_fee: 'Issue fee', late: 'Late', damage: 'Damaged', lost: 'Missing' }
+export function dueText(loan) {
+  return (loan.due_parts || [])
+    .map((p) => (p.kind === 'late' && loan.late_days ? `Late (${loan.late_days} day${loan.late_days === 1 ? '' : 's'})` : DUE_WORDS[p.kind] || p.kind)
+      + ((loan.due_parts || []).length > 1 ? ' ' + money(p.amount) : ''))
+    .join(' + ')
 }

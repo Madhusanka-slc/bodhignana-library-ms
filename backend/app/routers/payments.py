@@ -7,7 +7,7 @@ from ..auth import current_user
 from ..database import get_db
 from ..models import Loan, Member, Payment, User
 from ..schemas import PaymentIn, PaymentOut
-from ..services import log_action, record_payment
+from ..services import loan_payment_type, log_action, record_payment
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -31,7 +31,12 @@ def create_payment(data: PaymentIn, db: Session = Depends(get_db), user: User = 
         loan = db.get(Loan, data.loan_id)
         if not loan or loan.member_id != m.id:
             raise HTTPException(400, "This fine does not belong to this member")
-    p = record_payment(db, m, data.amount, data.payment_type, user, loan=loan, notes=data.notes)
+    ptype = data.payment_type
+    if ptype == "AUTO":  # a payment for a book: named after what is still unpaid on it
+        if not loan:
+            raise HTTPException(400, "Choose what the payment is for")
+        ptype = loan_payment_type(loan)
+    p = record_payment(db, m, data.amount, ptype, user, loan=loan, notes=data.notes)
     log_action(db, user, "payment", f"Received Rs. {float(p.amount):.2f} from {m.name} ({m.membership_no}) - "
                f"{p.payment_type.replace('_', ' ').lower()}" + (f": {data.notes}" if data.notes else ""),
                "payment", p.id, p.receipt_no)

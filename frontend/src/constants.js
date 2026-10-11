@@ -17,9 +17,11 @@ export const BOOK_STATUS = {
 }
 
 export const PAYMENT_TYPES = {
+  ISSUE_FEE: 'Book issue fee',
   LATE_FINE: 'Late return fine',
-  DAMAGE_FINE: 'Damaged book fine',
-  FINE: 'Late + damage fine',
+  DAMAGE_FINE: 'Damaged book charge',
+  LOST_FINE: 'Missing book charge',
+  FINE: 'Book charges (more than one)',
   MEMBERSHIP: 'Membership fee',
   OTHER: 'Other',
 }

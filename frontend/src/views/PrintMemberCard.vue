@@ -1,6 +1,6 @@
 <template>
   <div class="print-wrap">
-    <div class="no-print bar">
+    <div v-if="!embed" class="no-print bar">
       <button class="btn primary" @click="print">Print</button>
       <button class="btn" @click="close">Close</button>
     </div>
@@ -33,7 +33,8 @@ const m = ref(null)
 const s = ref({})
 const print = () => window.print()
 const close = () => window.close()
-const ready = () => setTimeout(print, 200)
+const embed = route.query.embed === '1' // shown inside the app's print preview popup
+const ready = () => { if (!embed) setTimeout(print, 200) }
 
 onMounted(async () => {
   const [d, st] = await Promise.all([api.get(`/members/${route.params.id}`), api.get('/settings')])

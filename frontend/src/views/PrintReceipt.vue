@@ -1,10 +1,11 @@
 <template>
   <div class="print-wrap">
-    <div class="no-print bar">
+    <div v-if="!embed" class="no-print bar">
       <button class="btn primary" @click="print">Print</button>
       <button class="btn" @click="close">Close</button>
     </div>
-    <div v-if="p" class="receipt">
+    <!-- One receipt, or several in a row (e.g. fines for several books returned together) -->
+    <div v-for="p in list" :key="p.id" class="receipt">
       <div class="c">
         <strong class="lib">{{ s.library_name }}</strong>
         <div v-if="s.library_address">{{ s.library_address }}</div>
@@ -18,6 +19,7 @@
         <tr><td>Member No</td><td>{{ p.member_no }}</td></tr>
         <tr><td>Name</td><td>{{ p.member_name }}</td></tr>
         <tr><td>Payment for</td><td>{{ PAYMENT_TYPES[p.payment_type] || p.payment_type }}</td></tr>
+        <tr v-if="p.ref"><td>Reference</td><td>{{ p.ref }}</td></tr>
         <tr v-if="p.book_title"><td>Book</td><td>{{ p.book_acc_no }} - {{ p.book_title }}</td></tr>
         <tr v-if="p.notes"><td>Details</td><td>{{ p.notes }}</td></tr>
       </table>
@@ -27,7 +29,7 @@
       <div>Received by: {{ p.received_by }}</div>
       <div class="c foot">{{ s.receipt_footer }}</div>
     </div>
-    <p v-else-if="error" class="alert red">{{ error }}</p>
+    <p v-if="error" class="alert red">{{ error }}</p>
   </div>
 </template>
 
@@ -39,17 +41,19 @@ import { PAYMENT_TYPES } from '../constants'
 import { fmtDateTime, money } from '../utils'
 
 const route = useRoute()
-const p = ref(null)
+const list = ref([])
 const s = ref({})
 const error = ref('')
+const embed = route.query.embed === '1' // shown inside the app's print preview popup
 const print = () => window.print()
 const close = () => window.close()
 
 onMounted(async () => {
   try {
-    ;[p.value, s.value] = await Promise.all([api.get(`/payments/${route.params.id}`), api.get('/settings')])
+    const ids = String(route.params.id).split(',').filter(Boolean)
+    ;[list.value, s.value] = await Promise.all([Promise.all(ids.map((id) => api.get(`/payments/${id}`))), api.get('/settings')])
     await nextTick()
-    setTimeout(print, 300)
+    if (!embed) setTimeout(print, 300)
   } catch (e) {
     error.value = e.message
   }
@@ -70,5 +74,6 @@ td { padding: 1px 0; vertical-align: top; }
 td:first-child { width: 28mm; }
 .amount { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; }
 .foot { margin-top: 8px; }
+.receipt + .receipt { margin-top: 10mm; padding-top: 6mm; border-top: 1px dashed #000; break-before: page; }
 @page { margin: 4mm; }
 </style>

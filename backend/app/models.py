@@ -65,6 +65,10 @@ class Member(Base):
     notes: Mapped[str] = txt()
     photo_image: Mapped[str] = txt(200)  # file name of the member's photo, '' if none
     created_by: Mapped[str] = txt(100)  # staff member who registered this member
+    # Has the printed member card (with its QR code) been given to the member?
+    card_done: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    card_done_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    card_done_by: Mapped[str] = txt(100)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
@@ -147,6 +151,10 @@ class Book(Base):
     rack_no: Mapped[str] = txt(30)
     shelf_no: Mapped[str] = txt(30)
     cover_image: Mapped[str] = txt(200)  # file name of the front cover picture, '' if none
+    # Has the printed QR / barcode label been stuck on this copy?
+    label_done: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    label_done_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    label_done_by: Mapped[str] = txt(100)
     status: Mapped[str] = mapped_column(String(20), default=AVAILABLE, index=True)
     withdrawn: Mapped[bool] = mapped_column(Boolean, default=False)
     withdrawn_by: Mapped[str] = txt(100)
@@ -217,6 +225,12 @@ class Loan(Base):
     damage_fine: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
     notes: Mapped[str] = txt()
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    # One reference number per issue (e.g. T2026-000123): the books issued together, their fee,
+    # the later return and any penalty all carry it.
+    ref: Mapped[str] = mapped_column(String(20), default="", nullable=False, index=True)
+    issue_fee: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)  # fee charged for borrowing this book
+    is_lost: Mapped[bool] = mapped_column(Boolean, default=False)  # the member could not bring the book back
+    lost_fine: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
 
     book: Mapped["Book"] = relationship(back_populates="loans")
     member: Mapped["Member"] = relationship(back_populates="loans")
@@ -224,7 +238,13 @@ class Loan(Base):
 
     @property
     def total_fine(self) -> Decimal:
-        return dec(self.late_fine) + dec(self.damage_fine)
+        """Penalties only (late, damaged, missing)."""
+        return dec(self.late_fine) + dec(self.damage_fine) + dec(self.lost_fine)
+
+    @property
+    def total_due(self) -> Decimal:
+        """Everything charged for this loan: the issue fee and any penalties."""
+        return dec(self.issue_fee) + self.total_fine
 
     @property
     def paid_amount(self) -> Decimal:
@@ -232,7 +252,21 @@ class Loan(Base):
 
     @property
     def balance(self) -> Decimal:
-        return max(self.total_fine - self.paid_amount, Decimal(0))
+        return max(self.total_due - self.paid_amount, Decimal(0))
+
+    @property
+    def due_parts(self) -> list[dict]:
+        """What is still unpaid, split by reason. Money received pays the issue fee first,
+        then the late fine, then the damage charge, then the missing-book charge."""
+        paid = self.paid_amount
+        parts = []
+        for kind, amount in (("issue_fee", dec(self.issue_fee)), ("late", dec(self.late_fine)),
+                             ("damage", dec(self.damage_fine)), ("lost", dec(self.lost_fine))):
+            used = min(paid, amount)
+            paid -= used
+            if amount - used > 0:
+                parts.append({"kind": kind, "amount": float(amount - used)})
+        return parts
 
     @property
     def days_overdue(self) -> int:
@@ -256,6 +290,7 @@ class Payment(Base):
     paid_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
     received_by: Mapped[str] = txt(100)
     notes: Mapped[str] = txt()
+    ref: Mapped[str] = mapped_column(String(20), default="", nullable=False, index=True)  # the issue it belongs to
 
     member: Mapped["Member"] = relationship()
     loan: Mapped[Optional["Loan"]] = relationship(back_populates="payments")

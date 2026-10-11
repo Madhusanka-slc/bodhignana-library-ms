@@ -20,12 +20,27 @@ def upgrade_db():
     with engine.begin() as conn:
         if "returned_at" not in loan_cols:
             conn.execute(text("ALTER TABLE loans ADD COLUMN returned_at TIMESTAMP"))
+        if "ref" not in loan_cols:
+            conn.execute(text("ALTER TABLE loans ADD COLUMN ref VARCHAR(20) NOT NULL DEFAULT ''"))
+            conn.execute(text("ALTER TABLE loans ADD COLUMN issue_fee NUMERIC(10, 2) NOT NULL DEFAULT 0"))
+            conn.execute(text("ALTER TABLE loans ADD COLUMN is_lost BOOLEAN NOT NULL DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE loans ADD COLUMN lost_fine NUMERIC(10, 2) NOT NULL DEFAULT 0"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_loans_ref ON loans (ref)"))
+        if "ref" not in {c["name"] for c in inspect(engine).get_columns("payments")}:
+            conn.execute(text("ALTER TABLE payments ADD COLUMN ref VARCHAR(20) NOT NULL DEFAULT ''"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_payments_ref ON payments (ref)"))
         if "cover_image" not in book_cols:
             conn.execute(text("ALTER TABLE books ADD COLUMN cover_image VARCHAR(200) NOT NULL DEFAULT ''"))
         if "photo_image" not in member_cols:
             conn.execute(text("ALTER TABLE members ADD COLUMN photo_image VARCHAR(200) NOT NULL DEFAULT ''"))
         if "created_by" not in member_cols:
             conn.execute(text("ALTER TABLE members ADD COLUMN created_by VARCHAR(100) NOT NULL DEFAULT ''"))
+        for table, cols, prefix in (("books", book_cols, "label"), ("members", member_cols, "card")):
+            if f"{prefix}_done" not in cols:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {prefix}_done BOOLEAN NOT NULL DEFAULT FALSE"))
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {prefix}_done_at TIMESTAMP"))
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {prefix}_done_by VARCHAR(100) NOT NULL DEFAULT ''"))
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_{prefix}_done ON {table} ({prefix}_done)"))
 
 
 def init_db():

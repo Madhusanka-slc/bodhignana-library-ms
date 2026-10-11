@@ -164,7 +164,7 @@ def inactive_members(mode: str = "no_borrow", months: int = 6, limit: int = 1000
 
 @router.get("/unpaid-fines")
 def unpaid_fines(db: Session = Depends(get_db)):
-    loans = (db.query(Loan).filter(or_(Loan.late_fine > 0, Loan.damage_fine > 0))
+    loans = (db.query(Loan).filter(or_(Loan.late_fine > 0, Loan.damage_fine > 0, Loan.lost_fine > 0, Loan.issue_fee > 0))
              .order_by(Loan.return_date.desc()).all())
     rows = [LoanOut.model_validate(l).model_dump(mode="json") for l in loans if l.balance > 0]
     return {"count": len(rows), "items": rows, "total": sum(r["balance"] for r in rows)}
@@ -256,6 +256,8 @@ def _book_row(b: Book) -> dict:
         "year_of_publication": b.year_of_publication, "section": b.section, "class_no_scheme": b.class_no_scheme,
         "call_no": b.call_no, "isbn": b.isbn, "price": float(b.price or 0), "status": b.status,
         "date_entered": b.date_entered.isoformat() if b.date_entered else None, "location": b.location,
+        "label_done": b.label_done, "label_done_at": b.label_done_at.isoformat() if b.label_done_at else None,
+        "label_done_by": b.label_done_by,
     }
 
 
@@ -267,6 +269,8 @@ def _member_row(m: Member) -> dict:
         "registered_date": m.registered_date.isoformat() if m.registered_date else None,
         "expiry_date": m.expiry_date.isoformat() if m.expiry_date else None,
         "is_active": m.is_active, "is_expired": m.is_expired,
+        "card_done": m.card_done, "card_done_at": m.card_done_at.isoformat() if m.card_done_at else None,
+        "card_done_by": m.card_done_by,
     }
 
 
@@ -284,7 +288,7 @@ def _date_between(col, from_date: Optional[date], to_date: Optional[date]):
 def books_report(q: str = "", section: str = "", status: str = "", subject: str = "",
                  entered_from: Optional[date] = None, entered_to: Optional[date] = None,
                  year_from: str = "", year_to: str = "",
-                 price_min: Optional[float] = None, price_max: Optional[float] = None,
+                 price_min: Optional[float] = None, price_max: Optional[float] = None, label: str = "",
                  sort: str = "acc_no", limit: int = LIST_LIMIT, db: Session = Depends(get_db)):
     query = db.query(Book)
     if q.strip():
@@ -307,6 +311,8 @@ def books_report(q: str = "", section: str = "", status: str = "", subject: str 
         query = query.filter(Book.price >= price_min)
     if price_max is not None:
         query = query.filter(Book.price <= price_max)
+    if label in ("yes", "no"):
+        query = query.filter(Book.label_done.is_(label == "yes"))
 
     count = query.count()
     value = float(query.with_entities(func.coalesce(func.sum(Book.price), 0)).scalar() or 0)
@@ -379,7 +385,7 @@ def never_borrowed(section: str = "", subject: str = "", entered_before: Optiona
 def members_report(q: str = "", membership_type: str = "", active: str = "yes",
                    min_age: Optional[int] = None, max_age: Optional[int] = None,
                    registered_from: Optional[date] = None, registered_to: Optional[date] = None,
-                   expiry: str = "", school: str = "", sort: str = "name",
+                   expiry: str = "", school: str = "", card: str = "", sort: str = "name",
                    limit: int = LIST_LIMIT, db: Session = Depends(get_db)):
     today = date.today()
     query = db.query(Member)
@@ -407,6 +413,8 @@ def members_report(q: str = "", membership_type: str = "", active: str = "yes",
         query = query.filter(not_life, Member.expiry_date.is_(None))
     if school.strip():
         query = query.filter(Member.school.ilike(f"%{school.strip()}%"))
+    if card in ("yes", "no"):
+        query = query.filter(Member.card_done.is_(card == "yes"))
 
     count = query.count()
     order = {
@@ -541,8 +549,8 @@ def circulation_summary(from_date: Optional[date] = None, to_date: Optional[date
 # ---------------------------------------------------------------- staff activity
 ACTION_GROUPS = {
     "issue": ["issue"], "return": ["return"], "renew_loan": ["renew_loan"], "payment": ["payment"],
-    "member_add": ["member_add"], "member_change": ["member_edit", "member_photo", "member_renew"],
-    "book_add": ["book_add"], "book_change": ["book_edit", "book_cover", "book_status"],
+    "member_add": ["member_add"], "member_change": ["member_edit", "member_photo", "member_renew", "member_card"],
+    "book_add": ["book_add"], "book_change": ["book_edit", "book_cover", "book_status", "book_label"],
     "holiday": ["holiday"], "settings": ["settings", "user"], "login": ["login"],
 }
 
@@ -607,3 +615,37 @@ def staff_summary(from_date: Optional[date] = None, to_date: Optional[date] = No
     rows = [{"group": names.get(uid) or "(unknown)", **v} for uid, v in data.items()]
     rows.sort(key=lambda r: -r["total"])
     return {"count": len(rows), "items": rows, "total": sum(r["total"] for r in rows)}
+
+
+# ---------------------------------------------------------------- QR labels and member cards
+@router.get("/label-progress")
+def label_progress(what: str = "books_section", db: Session = Depends(get_db)):
+    """How far the QR labelling has got: done, remaining and percent, per group.
+
+    what = books_section | books_subject | books_status | members_type
+    """
+    data = defaultdict(lambda: {"total": 0, "done": 0})
+    if what == "members_type":
+        query = (db.query(Member.membership_type, Member.card_done, func.count(Member.id))
+                 .filter(Member.is_active.is_(True)).group_by(Member.membership_type, Member.card_done))
+        label = lambda k: k or NOT_RECORDED  # noqa: E731
+    else:
+        key = {"books_subject": func.substr(Book.class_no_scheme, 1, 1), "books_status": Book.status}.get(what, Book.section)
+        query = (db.query(key, Book.label_done, func.count(Book.id))
+                 .filter(Book.withdrawn.is_(False)).group_by(key, Book.label_done))
+        if what == "books_subject":
+            label = lambda k: DEWEY.get(k or "", NOT_RECORDED if not k else "Other")  # noqa: E731
+        else:
+            label = lambda k: k or NOT_RECORDED  # noqa: E731
+    for k, done, n in query.all():
+        d = data[label(k)]
+        d["total"] += n
+        d["done"] += n if done else 0
+    rows = [{"group": k, "total": v["total"], "done": v["done"], "remaining": v["total"] - v["done"],
+             "percent": round(100 * v["done"] / v["total"], 1) if v["total"] else 0}
+            for k, v in sorted(data.items(), key=lambda x: (x[0] == NOT_RECORDED, x[0]))]
+    total = sum(r["total"] for r in rows)
+    done = sum(r["done"] for r in rows)
+    rows.append({"group": "All", "total": total, "done": done, "remaining": total - done,
+                 "percent": round(100 * done / total, 1) if total else 0, "is_total": True})
+    return {"count": len(rows) - 1, "items": rows, "total": done, "all": total}

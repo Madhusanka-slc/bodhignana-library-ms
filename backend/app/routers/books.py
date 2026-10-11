@@ -1,6 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
@@ -8,7 +9,7 @@ from ..config import settings
 from ..database import get_db
 from ..images import copy_picture, delete_picture, picture_response, save_picture
 from ..models import AVAILABLE, DAMAGED, ISSUED, LOST, WITHDRAWN, Book, User
-from ..schemas import BookIn, BookOut, BookPage, LoanOut, PictureIn, StatusIn
+from ..schemas import BookIn, BookOut, BookPage, DoneIn, LoanOut, PictureIn, StatusIn
 from ..services import book_search_filter, log_action, next_acc_no
 
 router = APIRouter(prefix="/api/books", tags=["books"])
@@ -24,7 +25,7 @@ def get_book_or_404(db: Session, book_id: int) -> Book:
 
 
 @router.get("", response_model=BookPage)
-def list_books(q: str = "", section: str = "", status: str = "", page: int = 1, size: int = 25,
+def list_books(q: str = "", section: str = "", status: str = "", label: str = "", page: int = 1, size: int = 25,
                db: Session = Depends(get_db), _: User = Depends(current_user)):
     query = db.query(Book)
     if q.strip():
@@ -33,9 +34,13 @@ def list_books(q: str = "", section: str = "", status: str = "", page: int = 1, 
         query = query.filter(Book.section == section)
     if status:
         query = query.filter(Book.status == status)
+    if label in ("yes", "no"):
+        query = query.filter(Book.label_done.is_(label == "yes"))
     total = query.count()
     size = max(1, min(size, 500))
-    items = query.order_by(Book.id.desc()).offset((max(page, 1) - 1) * size).limit(size).all()
+    # When searching, an exact Acc. No. comes first
+    order = [(func.lower(Book.acc_no) == q.strip().lower()).desc()] if q.strip() else []
+    items = query.order_by(*order, Book.id.desc()).offset((max(page, 1) - 1) * size).limit(size).all()
     return {"total": total, "items": items}
 
 
@@ -81,6 +86,38 @@ def update_book(book_id: int, data: BookIn, db: Session = Depends(get_db),
     b = get_book_or_404(db, book_id)
     _apply(db, b, data, user)
     log_action(db, user, "book_edit", f"Edited book \"{b.title}\"", "book", b.id, b.acc_no)
+    db.commit()
+    db.refresh(b)
+    return b
+
+
+# ---------- QR label: is the printed label stuck on the book? ----------
+def _set_label(b: Book, done: bool, user: User):
+    b.label_done = done
+    b.label_done_at = datetime.now() if done else None
+    b.label_done_by = user.display_name if done else ""
+
+
+@router.post("/labels")
+def set_labels(data: DoneIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Mark several books at once as labelled / not labelled."""
+    books = db.query(Book).filter(Book.id.in_(data.ids[:2000])).all() if data.ids else []
+    changed = [b for b in books if b.label_done != data.done]
+    for b in changed:
+        _set_label(b, data.done, user)
+    if changed:
+        nos = ", ".join(b.acc_no for b in changed[:15]) + (" ..." if len(changed) > 15 else "")
+        log_action(db, user, "book_label", f"Marked {len(changed)} book(s) as {'labelled' if data.done else 'not labelled'}: {nos}",
+                   "book", changed[0].id if len(changed) == 1 else None, changed[0].acc_no if len(changed) == 1 else "")
+    db.commit()
+    return {"changed": len(changed)}
+
+
+@router.post("/{book_id}/label", response_model=BookOut)
+def set_label(book_id: int, data: DoneIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    b = get_book_or_404(db, book_id)
+    _set_label(b, data.done, user)
+    log_action(db, user, "book_label", f"Marked \"{b.title}\" as {'labelled' if data.done else 'not labelled'}", "book", b.id, b.acc_no)
     db.commit()
     db.refresh(b)
     return b

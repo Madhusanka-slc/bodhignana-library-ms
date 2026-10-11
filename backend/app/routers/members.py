@@ -1,6 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
@@ -8,9 +10,9 @@ from ..config import settings
 from ..database import get_db
 from ..images import delete_picture, picture_response, save_picture
 from ..models import Member, Payment, User
-from ..schemas import LoanOut, MemberIn, MemberOut, MemberPage, PaymentOut, PictureIn, RenewIn
-from ..services import (add_years, get_settings, log_action, member_search_filter, next_membership_no,
-                        num, record_payment)
+from ..schemas import DoneIn, LoanOut, MemberIn, MemberOut, MemberPage, PaymentOut, PictureIn, RenewIn
+from ..services import (add_years, get_settings, log_action, member_search_filter, membership_expiry,
+                        membership_years_for, next_membership_no, peek_membership_no, record_payment)
 
 router = APIRouter(prefix="/api/members", tags=["members"])
 photos = APIRouter(prefix="/api/photos", tags=["members"])
@@ -25,7 +27,7 @@ def get_member_or_404(db: Session, member_id: int) -> Member:
 
 
 @router.get("", response_model=MemberPage)
-def list_members(q: str = "", membership_type: str = "", active: str = "", page: int = 1,
+def list_members(q: str = "", membership_type: str = "", active: str = "", card: str = "", page: int = 1,
                  size: int = 25, db: Session = Depends(get_db), _: User = Depends(current_user)):
     query = db.query(Member)
     if q.strip():
@@ -34,9 +36,13 @@ def list_members(q: str = "", membership_type: str = "", active: str = "", page:
         query = query.filter(Member.membership_type == membership_type)
     if active in ("true", "false"):
         query = query.filter(Member.is_active == (active == "true"))
+    if card in ("yes", "no"):
+        query = query.filter(Member.card_done.is_(card == "yes"))
     total = query.count()
     size = max(1, min(size, 500))
-    items = query.order_by(Member.id.desc()).offset((max(page, 1) - 1) * size).limit(size).all()
+    # When searching, an exact membership no. comes first
+    order = [(func.lower(Member.membership_no) == q.strip().lower()).desc()] if q.strip() else []
+    items = query.order_by(*order, Member.id.desc()).offset((max(page, 1) - 1) * size).limit(size).all()
     return {"total": total, "items": items}
 
 
@@ -49,30 +55,49 @@ def _apply(db: Session, m: Member, data: MemberIn, st: dict, is_new: bool):
     if not code:
         if not is_new:
             raise HTTPException(400, "Membership No is required")
-        code = next_membership_no(db, st.get("membership_prefix", "M"))
+        code = next_membership_no(db, st.get("membership_prefix", ""))
     clash = db.query(Member).filter(Member.membership_no == code, Member.id != (m.id or 0)).first()
     if clash:
         raise HTTPException(400, f"Membership No {code} is already used by {clash.name}")
     values["membership_no"] = code
     # Members imported from the old system may have no registration date; keep it empty on edit.
     values["registered_date"] = values["registered_date"] or m.registered_date or (date.today() if is_new else None)
-    if not values["expiry_date"] and values["membership_type"] != "LIFETIME" and is_new:
-        values["expiry_date"] = add_years(values["registered_date"], int(num(st, "membership_years", 1)))
+    if values["membership_type"] == "LIFETIME":
+        values["expiry_date"] = None
+    elif not values["expiry_date"] and is_new:
+        values["expiry_date"] = membership_expiry(values["membership_type"], values["registered_date"],
+                                                  values["renewal_date"], st)
     for k, v in values.items():
         setattr(m, k, v)
 
 
+@router.get("/next-no")
+def next_no(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    """The number a new member would get now. Only for showing: the real number is given when saving."""
+    return {"membership_no": peek_membership_no(db, get_settings(db))}
+
+
 @router.post("", response_model=MemberOut)
 def create_member(data: MemberIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    m = Member()
-    _apply(db, m, data, get_settings(db), is_new=True)
-    m.created_by = user.display_name
-    db.add(m)
-    db.flush()
-    log_action(db, user, "member_add", f"Registered {m.name} ({m.membership_type.title()})", "member", m.id, m.membership_no)
-    db.commit()
-    db.refresh(m)
-    return m
+    # A new member always gets the next number from the system (never typed in).
+    data = data.model_copy(update={"membership_no": ""})
+    for attempt in range(3):
+        m = Member()
+        _apply(db, m, data, get_settings(db), is_new=True)
+        m.created_by = user.display_name
+        db.add(m)
+        try:
+            db.flush()
+            log_action(db, user, "member_add", f"Registered {m.name} ({m.membership_type.title()})", "member", m.id, m.membership_no)
+            db.commit()
+        except IntegrityError:
+            # Someone else took that number in the same instant: start again with the next one
+            db.rollback()
+            if attempt == 2:
+                raise HTTPException(409, "Could not give a membership number. Please press Save again.")
+            continue
+        db.refresh(m)
+        return m
 
 
 @router.put("/{member_id}", response_model=MemberOut)
@@ -104,6 +129,20 @@ def member_detail(member_id: int, db: Session = Depends(get_db), _: User = Depen
         "unpaid": float(sum(l.balance for l in m.loans)),
         "payments": [PaymentOut.model_validate(p) for p in payments],
     }
+
+
+# ---------- Member card: has the printed card been given to the member? ----------
+@router.post("/{member_id}/card", response_model=MemberOut)
+def set_card(member_id: int, data: DoneIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    m = get_member_or_404(db, member_id)
+    m.card_done = data.done
+    m.card_done_at = datetime.now() if data.done else None
+    m.card_done_by = user.display_name if data.done else ""
+    log_action(db, user, "member_card", f"Marked the member card of {m.name} as {'given' if data.done else 'not given'}",
+               "member", m.id, m.membership_no)
+    db.commit()
+    db.refresh(m)
+    return m
 
 
 # ---------- Member photo (optional) ----------
@@ -140,15 +179,17 @@ def renew_membership(member_id: int, data: RenewIn, db: Session = Depends(get_db
                      user: User = Depends(current_user)):
     m = get_member_or_404(db, member_id)
     today = date.today()
+    # The new expiry date is counted from the day of renewal, for the period of the member's type
+    st = get_settings(db)
+    years = max(1, data.years) if data.years else membership_years_for(m.membership_type, st)
     m.renewal_date = today
     if m.membership_type != "LIFETIME":
-        base = m.expiry_date if m.expiry_date and m.expiry_date > today else today
-        m.expiry_date = add_years(base, max(1, data.years))
+        m.expiry_date = add_years(today, years)
     m.is_active = True
     payment = None
     if data.fee and data.fee > 0:
         payment = record_payment(db, m, data.fee, "MEMBERSHIP", user,
-                                 notes=f"Membership renewal ({data.years} year)")
+                                 notes=f"Membership renewal ({years} year)")
     until = "life time" if m.membership_type == "LIFETIME" else m.expiry_date.isoformat()
     log_action(db, user, "member_renew", f"Renewed the membership of {m.name} until {until}"
                + (f", fee Rs. {float(data.fee):.2f} (receipt {payment.receipt_no})" if payment else ""),

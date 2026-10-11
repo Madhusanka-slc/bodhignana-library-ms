@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
@@ -21,10 +22,12 @@ def search(q: str = "", section: str = "", include_members: bool = True, db: Ses
         bq = bq.filter(book_search_filter(q))
     if section:
         bq = bq.filter(Book.section == section)
-    books = bq.order_by(Book.title, Book.acc_no).limit(100).all()
+    # An exact Acc. No. / membership no. comes first, then the rest by name
+    exact_book = (func.lower(Book.acc_no) == q.lower()).desc()
+    books = bq.order_by(exact_book, Book.title, Book.acc_no).limit(100).all()
     members = []
     if include_members and q:
-        members = db.query(Member).filter(member_search_filter(q)).order_by(Member.name).limit(30).all()
+        members = db.query(Member).filter(member_search_filter(q)).order_by((func.lower(Member.membership_no) == q.lower()).desc(), Member.name).limit(30).all()
     return {
         "books": [BookOut.model_validate(b) for b in books],
         "members": [MemberOut.model_validate(m) for m in members],

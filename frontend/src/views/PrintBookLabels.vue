@@ -1,6 +1,6 @@
 <template>
   <div class="print-wrap">
-    <div class="no-print bar">
+    <div v-if="!embed" class="no-print bar">
       <button class="btn primary" @click="print">Print</button>
       <button class="btn" @click="close">Close</button>
       <span class="muted">{{ books.length }} label(s)</span>
@@ -34,7 +34,8 @@ const loaded = ref(0)
 const print = () => window.print()
 const close = () => window.close()
 
-watch(loaded, (n) => { if (n && n === books.value.length) setTimeout(print, 400) })
+const embed = route.query.embed === '1' // shown inside the app's print preview popup
+watch(loaded, (n) => { if (!embed && n && n === books.value.length) setTimeout(print, 400) })
 
 onMounted(async () => {
   const ids = String(route.query.ids || '').split(',').filter(Boolean)

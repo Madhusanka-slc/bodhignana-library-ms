@@ -43,6 +43,10 @@ stored in the `covers` Docker volume as `/app/data/covers/55162-*.jpg` to `55166
 (books 55165 and 55166 use a copy of the Madol Duwa sample cover).
 No real book has a cover picture yet.
 
+To show the label / card tracking, sample books B055162, B055163 and B055164 are marked "QR label done"
+and sample members M10230 and M10231 are marked "card given" (2026-10-08). No real book or member is
+marked. These marks disappear when the sample rows are removed.
+
 ## Sample loans (real books lent to real members, all made up)
 
 These use **real** books and **real** members, so removing them must also put the books back to
@@ -72,6 +76,28 @@ These use **real** books and **real** members, so removing them must also put th
 | 25 | 44034 | 3591 | 8801 | 2026-09-25 | 2026-10-09 | 2026-10-05 | in library |
 | 26 | 48018 | 73631 | 10231 | 2026-10-07 | 2026-10-21 | | ISSUED |
 | 27 | 47984 | 71091 | 9604 | 2026-10-07 | 2026-10-21 | | ISSUED |
+| 29 | 7 | 6847 | 10217 | 2026-10-01 | 2026-10-15 | | ISSUED |
+| 30 | 8 | 4117 | 10217 | 2026-09-20 | 2026-10-04 | | ISSUED (overdue) |
+| 31 | 9 | 6834 | 10217 | 2026-09-10 | 2026-09-24 | 2026-09-22 | DAMAGED (returned damaged, Rs. 500 damage fine unpaid) |
+| 32 | 17 | 5190 | 10217 | 2026-09-01 | 2026-09-15 | 2026-09-25 | in library (8 days late, Rs. 12 fine unpaid) |
+
+## Sample cases (2026-10-08): every kind of state, on real books and members
+
+Added by [add_sample_cases.sql](add_sample_cases.sql), together with loans 29-32 above. Before the change every
+book below was "In library", not withdrawn, with no rack / shelf and no QR label mark, and both members were
+active with no card mark. The removal script puts them back exactly like that.
+
+| What | Real record | Sample change |
+|---|---|---|
+| Member with books now, overdue book, unpaid fines | member 10217 (id 10226) | loans 29-32, member card marked given |
+| Member not active | member 8967 (id 9001) | `is_active = false` |
+| Book damaged | book 6834 (id 9) | status DAMAGED (from loan 31) |
+| Book lost | book 5003 (id 10) | status LOST |
+| Book withdrawn | book 6854 (id 12) | status WITHDRAWN, withdrawn by Administrator on 2026-10-02 |
+| Book on a rack | book 7329 (id 13) | rack R3, shelf S2 |
+| Book with QR label | book 6881 (id 15) | label marked done |
+
+Expired memberships need no sample: 148 real members already have an expiry date in the past (for example member 81).
 
 ## Sample staff account (created 2026-10-08)
 

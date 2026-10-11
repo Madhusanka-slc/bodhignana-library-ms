@@ -55,6 +55,8 @@
     </template>
   </Modal>
 
+  <PrintPreview />
+
   <div class="toasts">
     <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">{{ t.message }}</div>
   </div>
@@ -63,11 +65,9 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  BookOpen, LayoutDashboard, ArrowUpRight, ArrowDownLeft, Search, Users, Library,
-  Wallet, BarChart3, CalendarDays, Settings, LogOut, UserCircle,
-} from 'lucide-vue-next'
+import { ArrowDownLeft, ArrowUpRight, Banknote, BarChart3, BookOpen, CalendarDays, LayoutDashboard, Library, LogOut, Search, Settings, UserCircle, Users, Wallet } from 'lucide-vue-next'
 import Modal from './components/Modal.vue'
+import PrintPreview from './components/PrintPreview.vue'
 import { api } from './api'
 import { auth, appSettings, isAdmin, loadSettings, logout, toast, toasts } from './store'
 
@@ -77,20 +77,21 @@ const router = useRouter()
 const mainMenu = [
   { to: '/issue', label: 'Issue book', icon: ArrowUpRight },
   { to: '/return', label: 'Return book', icon: ArrowDownLeft },
+  { to: '/pay', label: 'Payment', icon: Banknote },
   { to: '/search', label: 'Search', icon: Search },
 ]
 const menu = [
   { to: '/', label: 'Home', icon: LayoutDashboard },
   { to: '/members', label: 'Members', icon: Users },
   { to: '/books', label: 'Books', icon: Library },
-  { to: '/payments', label: 'Payments', icon: Wallet },
+  { to: '/payments', label: 'Payment records', icon: Wallet },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/holidays', label: 'Holidays', icon: CalendarDays },
   { to: '/settings', label: 'Settings', icon: Settings, admin: true },
 ]
 
 function isActive(to) {
-  return to === '/' ? route.path === '/' : route.path.startsWith(to)
+  return route.path === to || (to !== '/' && route.path.startsWith(to + '/'))
 }
 
 const account = ref(null)

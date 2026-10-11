@@ -4,7 +4,7 @@ from typing import Optional
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from .models import AppSetting, AuditLog, Book, Holiday, Member, Payment, User, dec
@@ -17,9 +17,24 @@ DEFAULT_SETTINGS = {
     "grace_days": "2",
     "fine_per_day": "2",
     "charge_grace_days": "no",
-    "damage_multiplier": "2",
-    "membership_years": "1",
-    "membership_prefix": "M",
+    "damage_multiplier": "2",         # damaged book charge = this x the book's price
+    "lost_multiplier": "2",           # missing book charge = this x the book's price
+    "issue_fee_child": "2",           # fee for each book issued, by membership type (Rs. 2 a book)
+    "issue_fee_student": "2",
+    "issue_fee_adult": "2",
+    "issue_fee_lifetime": "2",
+    "issue_fee_default": "2",
+    "membership_fee_child": "0",      # filled in when "Membership fee" is chosen on the Payment screen
+    "membership_fee_student": "0",
+    "membership_fee_adult": "0",
+    "membership_fee_lifetime": "0",
+    "txn_last_no": "0",               # last issue reference number given out
+    "membership_years": "3",          # membership period for types not listed below
+    "membership_years_child": "3",
+    "membership_years_student": "3",
+    "membership_years_adult": "3",
+    "membership_prefix": "",          # e.g. "M" gives M10256; empty gives plain numbers like the old system
+    "membership_last_no": "0",        # the last number given out automatically (never given twice)
     "max_books_child": "2",
     "max_books_student": "2",
     "max_books_adult": "2",
@@ -104,6 +119,39 @@ def damage_fine_for(book: Book, st: dict) -> Decimal:
     return dec(book.price) * dec(st.get("damage_multiplier", "2"))
 
 
+def lost_fine_for(book: Book, st: dict) -> Decimal:
+    return dec(book.price) * dec(st.get("lost_multiplier", "2"))
+
+
+def issue_fee_for(member: Member, st: dict) -> Decimal:
+    """The fee for one book issued to this member (0 = no fee for that membership type)."""
+    return max(dec(num(st, f"issue_fee_{(member.membership_type or '').lower()}", num(st, "issue_fee_default", 0))), Decimal(0))
+
+
+def next_txn_ref(db: Session) -> str:
+    """The reference number for one issue (all the books issued together share it).
+    Given out one at a time, like membership numbers, so two counters never get the same one."""
+    if db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 7215002})
+    row = db.get(AppSetting, "txn_last_no", populate_existing=True)
+    n = (int(row.value) if row and (row.value or "").isdigit() else 0) + 1
+    if row:
+        row.value = str(n)
+    else:
+        db.add(AppSetting(key="txn_last_no", value=str(n)))
+    db.flush()
+    return f"T{date.today().year}-{n:06d}"
+
+
+# What a payment for a loan is called, from what is still unpaid on it
+PART_PAYMENT_TYPE = {"issue_fee": "ISSUE_FEE", "late": "LATE_FINE", "damage": "DAMAGE_FINE", "lost": "LOST_FINE"}
+
+
+def loan_payment_type(loan) -> str:
+    kinds = [p["kind"] for p in loan.due_parts]
+    return PART_PAYMENT_TYPE[kinds[0]] if len(kinds) == 1 else "FINE"
+
+
 def add_years(d: date, years: int) -> date:
     try:
         return d.replace(year=d.year + years)
@@ -112,13 +160,57 @@ def add_years(d: date, years: int) -> date:
 
 
 # ---------- Numbering ----------
+def membership_years_for(membership_type: str, st: dict) -> int:
+    """How many years a membership of this type lasts (Life Time never expires)."""
+    default = num(st, "membership_years", 3)
+    return max(1, int(num(st, f"membership_years_{(membership_type or '').lower()}", default)))
+
+
+def membership_expiry(membership_type: str, registered: Optional[date], renewed: Optional[date], st: dict) -> Optional[date]:
+    """Expiry = the last renewal date (or, if never renewed, the registration date) + the period for the type."""
+    start = renewed or registered
+    if membership_type == "LIFETIME" or not start:
+        return None
+    return add_years(start, membership_years_for(membership_type, st))
+
+
+def _highest_membership_no(db: Session, prefix: str) -> int:
+    """The biggest number in use among membership numbers that look like <prefix><digits>."""
+    best = 0
+    q = db.query(Member.membership_no)
+    if prefix:
+        q = q.filter(Member.membership_no.like(prefix + "%"))
+    for (code,) in q:
+        tail = (code or "")[len(prefix):]
+        if tail.isdigit() and len(tail) <= 9:
+            best = max(best, int(tail))
+    return best
+
+
+def peek_membership_no(db: Session, st: dict) -> str:
+    """The number the next new member would get (for showing only; nothing is reserved)."""
+    prefix = st.get("membership_prefix", "")
+    return f"{prefix}{max(int(num(st, 'membership_last_no', 0)), _highest_membership_no(db, prefix)) + 1}"
+
+
 def next_membership_no(db: Session, prefix: str) -> str:
-    n = (db.query(func.max(Member.id)).scalar() or 0) + 1
-    while True:
-        code = f"{prefix}{n:05d}"
-        if not db.query(Member.id).filter(Member.membership_no == code).first():
-            return code
-        n += 1
+    """Give out the next membership number: one more than the last one given out or in use.
+
+    Two people saving a new member at the same moment must not get the same number, so the
+    database is asked to let only one of them in here at a time (the lock lasts until this
+    save is committed). The unique index on membership_no is the final safety net.
+    """
+    if db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 7215001})
+    row = db.get(AppSetting, "membership_last_no", populate_existing=True)
+    last = int(row.value) if row and (row.value or "").isdigit() else 0
+    n = max(last, _highest_membership_no(db, prefix)) + 1
+    if row:
+        row.value = str(n)
+    else:
+        db.add(AppSetting(key="membership_last_no", value=str(n)))
+    db.flush()  # write the counter now, so it is saved (or undone) together with the new member
+    return f"{prefix}{n}"
 
 
 def next_acc_no(db: Session) -> str:
@@ -156,6 +248,7 @@ def record_payment(
         amount=amount,
         received_by=user.display_name,
         notes=notes,
+        ref=loan.ref if loan is not None else "",
     )
     db.add(p)
     db.flush()

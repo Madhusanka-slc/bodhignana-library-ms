@@ -10,7 +10,9 @@
       </fieldset>
       <div class="alert blue mt">
         Example with these rules: a book returned {{ exampleDays }} working days late pays
-        Rs. {{ exampleFine }}. A damaged book worth Rs. 500 pays Rs. {{ (500 * Number(s.damage_multiplier || 0)).toFixed(2) }}.
+        Rs. {{ exampleFine }}. A damaged book worth Rs. 500 pays Rs. {{ (500 * Number(s.damage_multiplier || 0)).toFixed(2) }};
+        a missing one pays Rs. {{ (500 * Number(s.lost_multiplier || 0)).toFixed(2) }}.
+        An Adult borrowing 2 books pays an issue fee of Rs. {{ (2 * Number(s.issue_fee_adult || 0)).toFixed(2) }}.
       </div>
       <button v-if="admin" class="btn primary mt" @click="saveSettings"><Save :size="16" /> Save settings</button>
     </div>
@@ -83,9 +85,22 @@ const fields = [
   { key: 'fine_per_day', label: 'Late fine per day (Rs.)', type: 'number' },
   { key: 'charge_grace_days', label: 'After the free days, charge them too?', type: 'select', required: true,
     options: [{ value: 'no', label: 'No, charge only days after the free days' }, { value: 'yes', label: 'Yes, charge all late days' }] },
-  { key: 'damage_multiplier', label: 'Damage fine = book price ×', type: 'number' },
-  { key: 'membership_years', label: 'Membership period (years)', type: 'number' },
-  { key: 'membership_prefix', label: 'Membership No. starts with', help: 'e.g. M gives M00001' },
+  { key: 'damage_multiplier', label: 'Damaged book charge = book price ×', type: 'number' },
+  { key: 'lost_multiplier', label: 'Missing book charge = book price ×', type: 'number' },
+  { key: 'issue_fee_child', label: 'Fee per book issued: Child (Rs.)', type: 'number', help: '0 = no fee' },
+  { key: 'issue_fee_student', label: 'Fee per book issued: Student (Rs.)', type: 'number' },
+  { key: 'issue_fee_adult', label: 'Fee per book issued: Adult (Rs.)', type: 'number' },
+  { key: 'issue_fee_lifetime', label: 'Fee per book issued: Life Time (Rs.)', type: 'number' },
+  { key: 'issue_fee_default', label: 'Fee per book issued: other types (Rs.)', type: 'number' },
+  { key: 'membership_fee_child', label: 'Membership fee: Child (Rs.)', type: 'number', help: 'Filled in when Membership fee is chosen on the Payment screen' },
+  { key: 'membership_fee_student', label: 'Membership fee: Student (Rs.)', type: 'number' },
+  { key: 'membership_fee_adult', label: 'Membership fee: Adult (Rs.)', type: 'number' },
+  { key: 'membership_fee_lifetime', label: 'Membership fee: Life Time (Rs.)', type: 'number' },
+  { key: 'membership_years_child', label: 'Membership period: Child (years)', type: 'number' },
+  { key: 'membership_years_student', label: 'Membership period: Student (years)', type: 'number' },
+  { key: 'membership_years_adult', label: 'Membership period: Adult (years)', type: 'number' },
+  { key: 'membership_years', label: 'Membership period: other types (years)', type: 'number' },
+  { key: 'membership_prefix', label: 'Membership No. starts with', help: 'Leave empty for plain numbers (10256). M gives M10256.' },
   { key: 'max_books_child', label: 'Max books: Child', type: 'number' },
   { key: 'max_books_student', label: 'Max books: Student', type: 'number' },
   { key: 'max_books_adult', label: 'Max books: Adult', type: 'number' },

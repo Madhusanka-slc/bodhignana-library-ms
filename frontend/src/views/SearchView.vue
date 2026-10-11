@@ -8,8 +8,8 @@
     </div>
 
     <div class="card">
-      <ScanBox placeholder="Title, author, ISBN, Acc. No., keyword, member name or number"
-        button-text="Search" keep @scan="run" />
+      <ScanBox placeholder="Start typing a title, author, ISBN, Acc. No., keyword, member name or number"
+        keep live @scan="run" @type="onType" />
       <div class="chips">
         <button class="chip" :class="{ on: !section }" @click="setSection('')">All sections</button>
         <button v-for="s in SECTIONS" :key="s" class="chip" :class="{ on: section === s }" @click="setSection(s)">{{ s }}</button>
@@ -18,7 +18,7 @@
 
     <p v-if="error" class="alert red">{{ error }}</p>
 
-    <div v-if="searched && !books.length && !members.length" class="card empty">
+    <div v-if="searched && q && !books.length && !members.length" class="card empty">
       Nothing found for "{{ q }}". Try a shorter word or check the spelling.
     </div>
 
@@ -75,6 +75,7 @@ import ScanBox from '../components/ScanBox.vue'
 import { api } from '../api'
 import { SECTIONS, typeLabel } from '../constants'
 import { fmtDate } from '../utils'
+import { latestOnly, useLiveSearch } from '../liveSearch'
 
 const q = ref('')
 const section = ref('')
@@ -85,11 +86,26 @@ const error = ref('')
 
 const availableCount = computed(() => books.value.filter((b) => b.status === 'AVAILABLE').length)
 
+const fetchResults = latestOnly((params) => api.get('/search', params))
+// Results update while typing (a moment after the last key); Enter or a scanned code searches at once.
+const live = useLiveSearch(() => run())
+function onType(text) {
+  q.value = text
+  live.soon()
+}
+
 async function run(text) {
   if (text !== undefined) q.value = text
   error.value = ''
+  if (!q.value.trim() && !section.value) {
+    books.value = []
+    members.value = []
+    searched.value = false
+    return
+  }
   try {
-    const r = await api.get('/search', { q: q.value, section: section.value })
+    const r = await fetchResults({ q: q.value, section: section.value })
+    if (!r) return // a newer search has already answered
     books.value = r.books
     members.value = r.members
     searched.value = true

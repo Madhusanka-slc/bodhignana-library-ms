@@ -42,3 +42,6 @@ export function toast(message, type = 'success') {
     if (i >= 0) toasts.splice(i, 1)
   }, type === 'error' ? 6000 : 3500)
 }
+
+// What is being shown in the print preview popup ('' = closed). See components/PrintPreview.vue
+export const printJob = reactive({ path: '', title: '' })

@@ -91,6 +91,9 @@ class MemberOut(MemberIn):
     id: int
     photo_url: Optional[str] = None
     created_by: Str = ""
+    card_done: bool = False
+    card_done_at: Optional[datetime] = None
+    card_done_by: Str = ""
     age: Optional[int] = None
     is_expired: bool = False
     borrowed_acc_nos: str = ""
@@ -103,7 +106,7 @@ class MemberPage(BaseModel):
 
 
 class RenewIn(BaseModel):
-    years: int = 1
+    years: Optional[int] = None  # empty = the usual period for the member's type
     fee: Money = 0
 
 
@@ -172,6 +175,9 @@ class BookOut(BookIn):
     id: int
     status: str
     cover_url: Optional[str] = None
+    label_done: bool = False
+    label_done_at: Optional[datetime] = None
+    label_done_by: Str = ""
     withdrawn: bool
     withdrawn_by: Str = ""
     withdrawn_date: Optional[date] = None
@@ -187,6 +193,11 @@ class BookOut(BookIn):
 class BookPage(BaseModel):
     total: int
     items: list[BookOut]
+
+
+class DoneIn(BaseModel):
+    done: bool = True
+    ids: list[int] = []  # for marking several books at once
 
 
 class PictureIn(BaseModel):
@@ -214,6 +225,12 @@ class LoanOut(ORM):
     total_fine: Money
     paid_amount: Money
     balance: Money
+    ref: str = ""
+    issue_fee: Money = 0
+    is_lost: bool = False
+    lost_fine: Money = 0
+    total_due: Money = 0
+    due_parts: list[dict] = []
     days_overdue: int
     is_overdue: bool
     notes: str
@@ -227,9 +244,36 @@ class IssueIn(BaseModel):
     issue_date: OptDate = None
 
 
+class CancelIssueIn(BaseModel):
+    """Undo an issue made today (to correct a mistake before the member leaves)."""
+    loan_ids: list[int]
+
+
 class ReturnIn(BaseModel):
     acc_no: str
     damaged: bool = False
+    lost: bool = False
+    notes: Str = ""
+    return_date: OptDate = None
+    collect_payment: bool = True
+
+
+class ReturnItem(BaseModel):
+    acc_no: str
+    damaged: bool = False
+    lost: bool = False  # missing: the member cannot bring the book back
+
+
+class ChargeIn(BaseModel):
+    """An extra charge added by staff for one of the member's books."""
+    loan_id: int
+    kind: str  # "damage" or "lost"
+    amount: Optional[Money] = None  # empty = worked out from the book price and the settings
+
+
+class ReturnManyIn(BaseModel):
+    """Several books handed back on one visit (each keeps its own due date and fine)."""
+    items: list[ReturnItem]
     notes: Str = ""
     return_date: OptDate = None
     collect_payment: bool = True
@@ -254,6 +298,7 @@ class PaymentOut(ORM):
     paid_at: datetime
     received_by: str
     notes: str
+    ref: str = ""
     member_name: str
     member_no: str
     book_acc_no: Optional[str] = None
