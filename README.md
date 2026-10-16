@@ -8,17 +8,21 @@ A simple library system for the counter: register members and books, issue and r
 
 ## 1. Install on a Windows PC (first time)
 
-1. Install **Docker Desktop** from <https://www.docker.com/products/docker-desktop/> and restart the PC.
-   In Docker Desktop settings, turn on **"Start Docker Desktop when you sign in"** so the library system starts by itself every morning.
-2. Copy this `library-system` folder to the PC, for example to `C:\library-system`.
-3. Open the folder, copy `.env.example` to `.env`, open `.env` in Notepad and change:
-   - `ADMIN_PASSWORD` – the first administrator password
-   - `SECRET_KEY` – any long random text (40+ letters and numbers)
-   - `DB_PASSWORD` – a database password
-4. Double-click **`scripts\start.bat`**. The first start downloads and builds everything (5–15 minutes).
-5. Open **<http://localhost:8080>** in Chrome or Edge and sign in with `admin` and your password.
-6. Go to **Settings** and enter the library name, address and phone (printed on receipts and cards). Add a staff account for each person at the counter.
-7. Go to **Holidays** and mark Sundays, Poya days and other closed days for the year.
+1. Copy this `library-system` folder to the PC, for example to `C:\library-system`.
+2. Double-click **`install.bat`**. It:
+   - checks Docker Desktop (and offers to install it; then restart the PC and run `install.bat` again),
+   - starts Docker and creates the settings file `.env` with a random secret key and database password,
+   - asks for the administrator password and the web port (Enter = 8080),
+   - builds and starts the database, backend and frontend (first time 5–15 minutes),
+   - opens <http://localhost:8080> and puts **Library System** and **Library Counter** shortcuts on the desktop
+     (Library Counter prints receipts straight to the default printer, without the print window).
+3. Sign in with `admin` and your password. In **Settings** enter the library name, address and phone, and add a staff account for each person at the counter.
+4. In **Holidays** mark Sundays, Poya days and other closed days for the year.
+5. In Docker Desktop settings, turn on **"Start Docker Desktop when you sign in"**.
+
+Running `install.bat` again is safe: it keeps the data and `.env`, and rebuilds and restarts (use it after updating the code).
+Options (from PowerShell): `scripts\install.ps1 -ImportFolder D:\export` imports a J-ISIS export (`userdb_flat.csv`, `libcat_flat.csv`);
+`-RestoreFile D:\backup.sql` loads a backup; `-NoShortcuts`, `-NoBrowser`.
 
 After this, the system starts automatically with Docker Desktop. Use `stop.bat` / `start.bat` only if needed.
 
