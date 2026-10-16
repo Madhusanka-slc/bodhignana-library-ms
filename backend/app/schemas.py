@@ -288,6 +288,12 @@ class PaymentIn(BaseModel):
     notes: Str = ""
 
 
+class CollectIn(BaseModel):
+    """Pay everything owed for these books at once, on one receipt."""
+    member_id: int
+    loan_ids: list[int]
+
+
 class PaymentOut(ORM):
     id: int
     receipt_no: str

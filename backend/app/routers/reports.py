@@ -58,7 +58,13 @@ def today_activity(db: Session = Depends(get_db)):
     returned_ids = set()
     for l in db.query(Loan).filter(or_(Loan.issue_date == today, Loan.return_date == today)).all():
         who = {"member_id": l.member_id, "member_name": l.member.name, "member_no": l.member.membership_no,
-               "book_id": l.book_id, "acc_no": l.book.acc_no, "title": l.book.title}
+               "book_id": l.book_id, "acc_no": l.book.acc_no, "title": l.book.title,
+               # for the details popup on Home
+               "author": l.book.persons, "section": l.book.section, "ref": l.ref,
+               "issue_date": l.issue_date.isoformat(), "loan_due": l.due_date.isoformat(),
+               "return_date": l.return_date.isoformat() if l.return_date else None,
+               "issue_fee": float(l.issue_fee), "late_fine": float(l.late_fine), "damage_fine": float(l.damage_fine),
+               "lost_fine": float(l.lost_fine), "lost": l.is_lost, "balance": float(l.balance)}
         if l.issue_date == today:
             add(l.created_at, "issue", due_date=l.due_date.isoformat(), by=l.issued_by, **who)
         if l.return_date == today:
@@ -69,12 +75,14 @@ def today_activity(db: Session = Depends(get_db)):
                 by=l.returned_by, **who)
     for m in db.query(Member).filter(Member.created_at >= start, Member.created_at < end):
         add(m.created_at, "member", member_id=m.id, member_name=m.name, member_no=m.membership_no,
-            membership_type=m.membership_type, by=m.created_by)
+            membership_type=m.membership_type, by=m.created_by, telephone=m.telephone, address=m.address,
+            expiry_date=m.expiry_date.isoformat() if m.expiry_date else None)
     for b in db.query(Book).filter(Book.created_at >= start, Book.created_at < end):
-        add(b.created_at, "book", book_id=b.id, acc_no=b.acc_no, title=b.title, section=b.section, by=b.entered_by)
+        add(b.created_at, "book", book_id=b.id, acc_no=b.acc_no, title=b.title, section=b.section, by=b.entered_by,
+            author=b.persons, call_no=b.call_no, price=float(b.price), publisher=b.publisher)
+    # every payment is listed (one receipt can hold a return charge and issue fees together);
+    # Home shows one line per receipt with its full total
     for p in payments:
-        if p.loan_id in returned_ids:
-            continue
         add(p.paid_at, "payment", member_id=p.member_id, member_name=p.member_name, member_no=p.member_no,
             receipt_no=p.receipt_no, amount=float(p.amount), payment_type=p.payment_type, by=p.received_by)
     events.sort(key=lambda e: e["time"] or "", reverse=True)

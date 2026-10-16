@@ -35,7 +35,7 @@
       <div class="card-head">
         <h2>Today's activity <span class="badge blue">{{ n(activity.length) }}</span></h2>
         <div class="activity-filter">
-          <button v-for="f in FILTERS.filter((x) => x.key === 'all' || countOf(x.key))" :key="f.key" class="chip"
+          <button v-for="f in FILTERS" :key="f.key" class="chip"
                   :class="{ on: show === f.key }" @click="show = f.key">
             {{ f.label }} <span v-if="f.key !== 'all'" class="chip-n">{{ countOf(f.key) }}</span>
           </button>
@@ -44,15 +44,18 @@
       <div v-if="s" class="today-strip">
         <div class="today-stat"><ArrowUpRight :size="16" /><b>{{ n(s.issued_today) }}</b> Books issued</div>
         <div class="today-stat"><ArrowDownLeft :size="16" /><b>{{ n(s.returned_today) }}</b> Books returned</div>
+        <!-- added today (counted from today's activity below); click to show only those -->
+        <button type="button" class="today-stat link" title="Show the members added today" @click="show = 'member'"><UserPlus :size="16" /><b>{{ n(countOf('member')) }}</b> New members</button>
+        <button type="button" class="today-stat link" title="Show the books added today" @click="show = 'book'"><BookPlus :size="16" /><b>{{ n(countOf('book')) }}</b> New books</button>
         <router-link to="/payments" class="today-stat link" title="Open payments">
-          <Wallet :size="16" /><b>{{ money(s.collected_today) }}</b> Fines &amp; fees collected
+          <Wallet :size="16" /><b>{{ money(s.collected_today) }}</b> Collected
         </router-link>
       </div>
       <div v-if="!shown.length" class="activity-empty muted">
         {{ activity.length ? 'Nothing of this kind today.' : 'Nothing yet today. Issues, returns, new members, new books and payments appear here as they happen.' }}
       </div>
       <div v-else class="activity-list">
-        <div v-for="(e, i) in shown" :key="i" class="act" :class="'k-' + e.kind" @click="openEvent(e)">
+        <div v-for="(e, i) in shown" :key="i" class="act" :class="'k-' + e.kind" title="Click to see the details" @click="openEvent(e)">
           <span class="act-time">{{ timeOf(e.time) }}</span>
           <span class="act-icon"><component :is="KIND[e.kind].icon" :size="17" /></span>
           <div class="act-text">
@@ -64,6 +67,53 @@
         </div>
       </div>
     </div>
+
+    <!-- Details of one line of today's activity -->
+    <Modal v-if="sel" :title="KIND[sel.kind].verb + (sel.kind === 'payment' ? ' ' + sel.receipt_no : sel.acc_no ? ' · ' + sel.acc_no : sel.member_no ? ' · ' + sel.member_no : '')" wide @close="sel = null">
+      <div class="rs-tiles">
+        <div v-for="t in detailTiles" :key="t.label" class="rs-tile"><small>{{ t.label }}</small><strong :title="t.value">{{ t.value || '-' }}</strong><small v-if="t.sub">{{ t.sub }}</small></div>
+      </div>
+
+      <!-- issue / return: the borrowing record -->
+      <table v-if="sel.kind === 'issue' || sel.kind === 'return'" class="table report-table rs-lines">
+        <tbody>
+          <tr><td style="width: 34%">Book</td><td><span class="code-tag">{{ sel.acc_no }}</span> {{ sel.title }}<span v-if="sel.author" class="muted"> · {{ sel.author }}</span></td></tr>
+          <tr><td>Member</td><td><span class="code-tag">{{ sel.member_no }}</span> {{ sel.member_name }}</td></tr>
+          <tr v-if="sel.ref"><td>Reference</td><td><span class="ref-tag">{{ sel.ref }}</span></td></tr>
+          <tr><td>Borrowed / due</td><td>{{ fmtDate(sel.issue_date) }} · due {{ fmtDate(sel.loan_due) }}</td></tr>
+          <tr v-if="sel.kind === 'return'"><td>Returned</td><td>{{ fmtDate(sel.return_date) }} · {{ sel.lost ? 'missing' : sel.damaged ? 'damaged' : sel.late_days ? sel.late_days + ' day(s) late' : 'on time, good condition' }}</td></tr>
+          <tr v-if="sel.issue_fee"><td>Issue fee</td><td>{{ money(sel.issue_fee) }}</td></tr>
+          <tr v-if="sel.late_fine || sel.damage_fine || sel.lost_fine"><td>Charges</td><td>
+            <template v-if="sel.late_fine">Late {{ money(sel.late_fine) }} </template><template v-if="sel.damage_fine">Damaged {{ money(sel.damage_fine) }} </template><template v-if="sel.lost_fine">Missing {{ money(sel.lost_fine) }}</template></td></tr>
+          <tr><td>Still to pay</td><td><strong :class="{ 'text-red': sel.balance > 0 }">{{ sel.balance > 0 ? money(sel.balance) : 'Nothing' }}</strong><span v-if="sel.receipt_no" class="muted"> · paid on receipt {{ sel.receipt_no }}</span></td></tr>
+        </tbody>
+      </table>
+
+      <!-- payment: every line of the receipt -->
+      <template v-else-if="sel.kind === 'payment'">
+        <p v-if="!lines.length" class="muted">Loading the receipt…</p>
+        <table v-else class="table report-table rs-lines">
+          <colgroup><col style="width: 190px" /><col style="width: 96px" /><col /><col style="width: 140px" /></colgroup>
+          <thead><tr><th>For</th><th>Acc. No.</th><th>Book / details</th><th class="num">Amount</th></tr></thead>
+          <tbody>
+            <tr v-for="p in lines" :key="p.id">
+              <td>{{ PAYMENT_TYPES[p.payment_type] || p.payment_type }}</td>
+              <td><span v-if="p.book_acc_no" class="code-tag">{{ p.book_acc_no }}</span><span v-else>-</span></td>
+              <td :title="[p.book_title, p.notes].filter(Boolean).join(' · ')">{{ [p.book_title, p.payment_type === 'ISSUE_FEE' ? '' : p.notes].filter(Boolean).join(' · ') || '-' }}</td>
+              <td class="num">{{ money(p.amount) }}</td>
+            </tr>
+            <tr><td colspan="3" class="totalrow"><strong>Total</strong></td><td class="num totalrow total-big">{{ money(sel.amount) }}</td></tr>
+          </tbody>
+        </table>
+      </template>
+
+      <template #footer>
+        <router-link v-if="sel.member_id" :to="'/members/' + sel.member_id" class="btn"><UserRound :size="16" /> Member profile</router-link>
+        <router-link v-if="sel.book_id" :to="'/books/' + sel.book_id" class="btn"><BookOpen :size="16" /> Book page</router-link>
+        <button class="btn" @click="sel = null">Close</button>
+        <button v-if="sel.kind === 'payment' && lines.length" class="btn primary" @click="openPrint('/print/receipt/' + lines[0].id)"><Printer :size="16" /> Print receipt</button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -71,11 +121,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  ArrowDownLeft, ArrowUpRight, BookPlus, CircleAlert, CircleCheck, Clock, Search, UserPlus, UserRound, Users, Wallet,
+  ArrowDownLeft, ArrowUpRight, BookOpen, BookPlus, CircleAlert, CircleCheck, Clock, Printer, Search, UserPlus, UserRound, Users, Wallet,
 } from 'lucide-vue-next'
 import { api } from '../api'
 import { auth } from '../store'
-import { fmtDate, money } from '../utils'
+import { fmtDate, money, openPrint } from '../utils'
+import Modal from '../components/Modal.vue'
 import { PAYMENT_TYPES, typeLabel } from '../constants'
 
 const s = ref(null)
@@ -104,9 +155,10 @@ const KIND = {
   book: { verb: 'New book', icon: BookPlus },
   payment: { verb: 'Payment', icon: Wallet },
 }
+// every kind is always shown (with 0 when nothing of it happened today)
 const FILTERS = [
   { key: 'all', label: 'All' }, { key: 'issue', label: 'Issued' }, { key: 'return', label: 'Returned' },
-  { key: 'member', label: 'Members' }, { key: 'book', label: 'Books' }, { key: 'payment', label: 'Payments' },
+  { key: 'member', label: 'New members' }, { key: 'book', label: 'New books' }, { key: 'payment', label: 'Payments' },
 ]
 const shown = computed(() => (show.value === 'all' ? activity.value : activity.value.filter((e) => e.kind === show.value)))
 const countOf = (k) => activity.value.filter((e) => e.kind === k).length
@@ -117,12 +169,15 @@ const mainText = (e) => (e.kind === 'member' ? e.member_name : e.kind === 'payme
 function subText(e) {
   if (e.kind === 'issue') return `to ${e.member_name} (${e.member_no}) · due ${fmtDate(e.due_date)}`
   if (e.kind === 'return') {
-    const paid = e.receipt_no ? ` · fine paid, receipt ${e.receipt_no}` : ''
+    // only when the return itself had a charge (late, damaged, missing) and it was paid
+    const charged = e.late_fine || e.damage_fine || e.lost_fine
+    const paid = charged ? (e.balance > 0 ? ' · charge not paid yet' : e.receipt_no ? ` · charge paid, receipt ${e.receipt_no}` : '') : ''
     return `from ${e.member_name} (${e.member_no})${paid}`
   }
   if (e.kind === 'member') return typeLabel(e.membership_type)
   if (e.kind === 'book') return e.section || 'No section'
-  return `${PAYMENT_TYPES[e.payment_type] || e.payment_type} · ${e.member_name} (${e.member_no})`
+  const what = (e.types || [e.payment_type]).map((t) => PAYMENT_TYPES[t] || t).join(' + ')
+  return `${what}${e.lines > 1 ? ` · ${e.lines} books` : ''} · ${e.member_name} (${e.member_no})`
 }
 
 function tagOf(e) {
@@ -132,14 +187,54 @@ function tagOf(e) {
   return 'On time'
 }
 
-function openEvent(e) {
-  if (e.kind === 'book') router.push('/books/' + e.book_id)
-  else if (e.member_id) router.push('/members/' + e.member_id)
+// A click shows the details in a popup (like Payment records); the buttons there open the member or book
+const sel = ref(null)
+const lines = ref([]) // the lines of a payment's receipt
+async function openEvent(e) {
+  sel.value = e
+  lines.value = []
+  if (e.kind === 'payment' && e.receipt_no) lines.value = await api.get('/payments', { receipt_no: e.receipt_no })
 }
+const timeFull = (t) => (t ? new Date(t).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '-')
+const detailTiles = computed(() => {
+  const e = sel.value
+  if (!e) return []
+  const when = { label: 'When', value: timeFull(e.time) }
+  const by = { label: 'Done by', value: e.by }
+  if (e.kind === 'issue') return [when, { label: 'Member', value: e.member_name, sub: 'No. ' + e.member_no }, { label: 'Due back', value: fmtDate(e.loan_due) }, by]
+  if (e.kind === 'return') return [when, { label: 'Member', value: e.member_name, sub: 'No. ' + e.member_no },
+    { label: 'Condition', value: e.lost ? 'Missing' : e.damaged ? 'Damaged' : e.late_days ? `${e.late_days} day(s) late` : 'On time' }, by]
+  if (e.kind === 'member') return [when, { label: 'Membership type', value: typeLabel(e.membership_type) },
+    { label: 'Telephone', value: e.telephone }, { label: 'Expiry date', value: e.expiry_date ? fmtDate(e.expiry_date) : 'Never / not set' },
+    { label: 'Address', value: e.address }, by]
+  if (e.kind === 'book') return [when, { label: 'Title', value: e.title, sub: e.author }, { label: 'Section', value: e.section },
+    { label: 'Call No.', value: e.call_no }, { label: 'Price', value: e.price ? money(e.price) : '' }, by]
+  return [when, { label: 'Total', value: money(e.amount) }, { label: 'Member', value: e.member_name, sub: 'No. ' + e.member_no }, by]
+})
 
 onMounted(async () => {
   const [stats, act] = await Promise.all([api.get('/reports/dashboard'), api.get('/reports/today-activity')])
   s.value = stats
-  activity.value = act.items
+  activity.value = oneLinePerReceipt(act.items)
 })
+
+// One receipt can cover several books (one payment each): show it as one line with its total
+function oneLinePerReceipt(items) {
+  const out = []
+  const byNo = new Map()
+  for (const e of items) {
+    if (e.kind !== 'payment' || !e.receipt_no) { out.push(e); continue }
+    const first = byNo.get(e.receipt_no)
+    if (!first) {
+      const copy = { ...e, amount: Number(e.amount), types: [e.payment_type], lines: 1 }
+      byNo.set(e.receipt_no, copy)
+      out.push(copy)
+    } else {
+      first.amount += Number(e.amount)
+      first.lines += 1
+      if (!first.types.includes(e.payment_type)) first.types.push(e.payment_type)
+    }
+  }
+  return out
+}
 </script>

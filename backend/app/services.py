@@ -11,6 +11,8 @@ from .models import AppSetting, AuditLog, Book, Holiday, Member, Payment, User, 
 
 DEFAULT_SETTINGS = {
     "library_name": "Public Library",
+    "print_name": "",                 # name on receipts, cards, labels and reports (empty = library_name)
+    "library_place": "",              # town, printed under that name (e.g. Kalutara)
     "library_address": "",
     "library_phone": "",
     "loan_days": "14",
@@ -223,6 +225,9 @@ def next_acc_no(db: Session) -> str:
 
 
 def next_receipt_no(db: Session) -> str:
+    """The next receipt number. One counter at a time, so two counters never print the same number."""
+    if db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 7215003})
     prefix = f"R{date.today().year}-"
     last = (
         db.query(Payment.receipt_no)
@@ -235,13 +240,14 @@ def next_receipt_no(db: Session) -> str:
 
 
 def record_payment(
-    db: Session, member: Member, amount, payment_type: str, user: User, loan=None, notes: str = ""
+    db: Session, member: Member, amount, payment_type: str, user: User, loan=None, notes: str = "",
+    receipt_no: Optional[str] = None,
 ) -> Payment:
     amount = dec(amount)
     if amount <= 0:
         raise HTTPException(400, "Amount must be more than zero")
     p = Payment(
-        receipt_no=next_receipt_no(db),
+        receipt_no=receipt_no or next_receipt_no(db),  # several books on one receipt share its number
         member=member,
         loan=loan,
         payment_type=payment_type,

@@ -26,8 +26,9 @@ export function useFitPage(box, page, reload) {
     const el = box.value
     const row = el?.querySelector('tbody tr')
     const head = el?.querySelector('thead')
-    if (row) rowH = row.getBoundingClientRect().height
-    if (head) headH = head.getBoundingClientRect().height
+    // offsetHeight, like clientHeight above, is not changed by the screen-size enlargement
+    if (row) rowH = row.offsetHeight
+    if (head) headH = head.offsetHeight
   }
 
   // Keep the first record on screen when the page size changes.

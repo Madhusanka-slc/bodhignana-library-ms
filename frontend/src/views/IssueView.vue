@@ -1,18 +1,21 @@
 <template>
   <div class="flow-page">
-    <div class="page-head">
-      <div>
-        <h1>Issue book</h1>
-        <p class="sub">Member, then books, then the summary, then payment. Use Back at the bottom to change an earlier step.</p>
+    <!-- Title and steps stay at the top; only what is below them scrolls -->
+    <div class="flow-top">
+      <div class="page-head">
+        <div>
+          <h1>Issue book</h1>
+          <p class="sub">Member, then books, then the summary, then payment. Use Back at the bottom to change an earlier step.</p>
+        </div>
+        <button v-if="status || result" class="btn" @click="reset"><RotateCcw :size="16" /> Start again</button>
       </div>
-      <button v-if="status || result" class="btn" @click="reset"><RotateCcw :size="16" /> Start again</button>
-    </div>
 
-    <!-- The steps. A step already passed is a button: click it to go back and change something. -->
-    <div class="steps">
-      <component :is="step > i + 1 ? 'button' : 'div'" v-for="(name, i) in STEPS" :key="name" class="step"
-                 :class="{ on: step === i + 1, done: step > i + 1, back: step > i + 1 }"
-                 :title="step > i + 1 ? 'Go back to ' + name : null" @click="goStep(i + 1)"><b>{{ i + 1 }}</b> {{ name }}</component>
+      <!-- The steps. A step already passed is a button: click it to go back and change something. -->
+      <div class="steps">
+        <component :is="step > i + 1 ? 'button' : 'div'" v-for="(name, i) in STEPS" :key="name" class="step"
+                   :class="{ on: step === i + 1, done: step > i + 1, back: step > i + 1 }"
+                   :title="step > i + 1 ? 'Go back to ' + name : null" @click="goStep(i + 1)"><b>{{ i + 1 }}</b> {{ name }}</component>
+      </div>
     </div>
 
     <!-- Step 1: the member. The search bar, and below it who was found. -->
@@ -46,10 +49,10 @@
               <strong>{{ status.can_borrow }} of {{ status.max_books }} book(s)</strong></span></div>
           </div>
           <p v-for="b in status.blocks" :key="b" class="alert red">{{ b }}</p>
-          <div v-if="unpaid > 0" class="alert red fine-block">
-            <span><strong>Unpaid charges: {{ money(unpaid) }}.</strong> They must be collected before more books are issued.</span>
-            <router-link :to="'/pay?member=' + status.member.id" class="btn sm primary"><Banknote :size="15" /> Go to Payment</router-link>
-          </div>
+          <p v-if="unpaid > 0" class="alert blue">
+            <strong>Unpaid charges from earlier: {{ money(unpaid) }}</strong> ({{ status.fines.map((l) => l.book.acc_no).join(', ') }}).
+            They are added to this visit's payment, on the same receipt.
+          </p>
           <p v-for="w in status.warnings.filter((x) => !x.startsWith('Unpaid'))" :key="w" class="alert orange">{{ w }}</p>
           <div v-if="status.loans.length" class="mem-sum-books">
             <small>Has now:</small>
@@ -102,7 +105,7 @@
 
       <p v-if="status.issue_fee > 0 && basket.length" class="fee-line">
         Issue fee: {{ basket.length }} × {{ money(status.issue_fee) }} = <strong>{{ money(basket.length * status.issue_fee) }}</strong>
-        <span class="muted">&nbsp;({{ typeLabel(status.member.membership_type) }}) · paid on the Payment step</span>
+        <span class="muted">&nbsp;({{ typeLabel(status.member.membership_type) }}) · paid on the Payment step<template v-if="unpaid > 0">, with {{ money(unpaid) }} owed from earlier</template></span>
       </p>
     </div>
 
@@ -184,7 +187,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ArrowDownLeft, Banknote, BookOpen, CalendarClock, Check, ChevronLeft, ChevronRight, IdCard, Phone, Printer, RotateCcw, X,
@@ -219,7 +222,7 @@ const askUndo = ref(false)
 const unpaid = computed(() => (status.value?.fines || []).reduce((s, l) => s + l.balance, 0))
 const blocked = computed(() => !!status.value?.blocks.length)
 // The member step can be left when a member is found, may borrow, and owes nothing
-const canGoBooks = computed(() => !!status.value && !blocked.value && !(unpaid.value > 0))
+const canGoBooks = computed(() => !!status.value && !blocked.value)
 const payDue = computed(() => pay.value?.unpaid || 0)
 const nonLending = computed(() =>
   (appSettings.non_lending_sections || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean))
@@ -227,7 +230,6 @@ const barNote = computed(() => {
   if (step.value === 1) {
     if (!status.value) return 'Scan or find the member'
     if (blocked.value) return 'This member cannot borrow now'
-    if (unpaid.value > 0) return 'Unpaid charges must be collected first'
     return status.value.member.name
   }
   const who = `${status.value.member.name} · ${status.value.member.membership_no}`
@@ -385,6 +387,16 @@ function reset() {
   choices.value = []
   nextTick(() => memberScan.value?.focus())
 }
+
+// The height of the title + steps, so parts of a step can stick just below them
+let topObserver
+onMounted(() => {
+  const el = document.querySelector('.flow-top')
+  if (!el) return
+  topObserver = new ResizeObserver(() => el.parentElement.style.setProperty('--flow-top-h', el.offsetHeight + 'px'))
+  topObserver.observe(el)
+})
+onBeforeUnmount(() => topObserver?.disconnect())
 
 // Opened from Return book or Payment ("Issue books to this member"): that member is already found
 onMounted(async () => {

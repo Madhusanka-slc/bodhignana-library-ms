@@ -5,7 +5,7 @@
       <button class="btn" @click="close">Close</button>
     </div>
     <div v-if="m" class="id-card">
-      <div class="head">{{ s.library_name }}<span>Membership card</span></div>
+      <div class="head">{{ printName(s) }}<template v-if="s.library_place">, {{ s.library_place }}</template><span>Membership card</span></div>
       <div class="body">
         <img v-if="m.photo_url" :src="m.photo_url" class="photo" alt="Photo" />
         <div class="txt">
@@ -26,7 +26,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, qrUrl } from '../api'
 import { typeLabel } from '../constants'
-import { fmtDate } from '../utils'
+import { fmtDate, printName } from '../utils'
 
 const route = useRoute()
 const m = ref(null)

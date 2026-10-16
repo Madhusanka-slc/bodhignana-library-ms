@@ -3,44 +3,34 @@
     <div class="page-head">
       <div>
         <h1>Reports</h1>
-        <p class="sub">{{ picking ? 'Pick a report to open it.' : 'Set filters and press Show report. Empty filters include everything.' }}</p>
-      </div>
-      <router-link v-if="!picking" to="/reports" class="btn"><LayoutGrid :size="16" /> All reports</router-link>
-    </div>
-
-    <!-- All reports: one numbered tile per report, coloured by group -->
-    <div v-if="picking" class="tile-page">
-      <div class="tile-legend">
-        <button class="chip" :class="{ on: !pickGroup }" @click="pickGroup = ''">All <span class="chip-n">{{ REPORTS.length }}</span></button>
-        <button v-for="g in GROUPS" :key="g.key" class="chip" :class="{ on: pickGroup === g.key }" @click="pickGroup = pickGroup === g.key ? '' : g.key">
-          <i class="tile-dot" :class="'g-' + g.key"></i>{{ g.title }} <span class="chip-n">{{ REPORTS.filter((r) => r.group === g.key).length }}</span>
-        </button>
-      </div>
-      <div class="tile-grid">
-        <router-link v-for="t in tiles" :key="t.key" :to="{ path: '/reports', query: { r: t.key } }" class="num-tile" :title="t.desc">
-          <span class="num-badge" :class="'g-' + t.group">{{ t.no }}</span>
-          <span class="num-text"><strong>{{ t.title }}</strong><small>{{ t.sub }}</small></span>
-        </router-link>
+        <p class="sub">Pick a group, then a report. Set its filters and press Show report: the results open in a large window.</p>
       </div>
     </div>
 
     <!-- 1. Report groups as tabs -->
-    <div v-if="!picking" class="report-tabs" role="tablist">
-      <button v-for="g in GROUPS" :key="g.key" role="tab" class="report-tab" :class="{ on: current.group === g.key }"
-              :aria-selected="current.group === g.key" @click="selectGroup(g)">
+    <div class="report-tabs" role="tablist">
+      <button v-for="g in GROUPS" :key="g.key" role="tab" class="report-tab" :class="{ on: group === g.key }"
+              :aria-selected="group === g.key" @click="selectGroup(g)">
         <component :is="g.icon" :size="18" /> {{ g.title }}
         <small>{{ REPORTS.filter((r) => r.group === g.key).length }}</small>
       </button>
     </div>
 
-    <div v-if="!picking" class="card list-card report-card">
-      <!-- 2. Reports in the selected tab -->
-      <div class="report-chips">
-        <button v-for="r in groupReports" :key="r.key" class="report-chip" :class="{ on: current.key === r.key }" @click="select(r)">
-          {{ r.title }}
+    <div class="card list-card report-card">
+      <!-- 2. The reports of this group, as numbered tiles -->
+      <div class="tile-grid report-tiles">
+        <button v-for="t in tiles" :key="t.key" type="button" class="num-tile" :class="{ on: chosen && current.key === t.key }" :title="t.desc" @click="select(t.report)">
+          <span class="num-badge" :class="'g-' + t.group">{{ t.no }}</span>
+          <span class="num-text"><strong>{{ t.title }}</strong><small>{{ t.sub }}</small></span>
         </button>
       </div>
 
+      <div v-if="!chosen" class="rr-hint">
+        <LayoutGrid :size="22" />
+        <span><strong>Pick a report above.</strong> Its filters show here; then press Show report.</span>
+      </div>
+
+      <template v-else>
       <!-- 3. Title, actions and filters -->
       <div class="report-head">
         <div>
@@ -48,15 +38,12 @@
           <p class="muted small">{{ current.desc }}</p>
         </div>
         <div class="actions">
-          <button v-if="current.params" class="btn" @click="showFilters = !showFilters">
-            <SlidersHorizontal :size="16" /> {{ showFilters ? 'Hide filters' : 'Show filters' }}
-          </button>
-          <button class="btn" :disabled="!rows.length || exporting" @click="exportAll"><Download :size="16" /> {{ exporting ? 'Preparing...' : 'Excel (CSV)' }}</button>
-          <button class="btn primary" :disabled="!rows.length" @click="preview = true"><FileText :size="16" /> Preview &amp; print</button>
+          <button v-if="rows.length" class="btn" @click="resultsOpen = true"><LayoutGrid :size="16" /> Last results ({{ n(count) }})</button>
+          <button v-if="!current.params" class="btn primary" :disabled="!loaded" @click="run"><Play :size="16" /> Show report</button>
         </div>
       </div>
 
-      <div v-if="current.params && showFilters" class="report-filters">
+      <div v-if="current.params" class="report-filters big">
         <div class="filters">
           <div v-for="p in current.params" :key="p.key" :class="{ grow: p.wide || (p.type === 'range' && !p.narrow) }">
             <label>{{ p.label }}</label>
@@ -78,43 +65,75 @@
             <input v-else v-model="params[p.key]" :type="p.type" :placeholder="p.placeholder || ''" @keyup.enter="run" />
           </div>
           <div class="filter-actions">
-            <button class="btn primary" @click="run"><Play :size="16" /> Show report</button>
+            <button class="btn primary" :disabled="!loaded" @click="run"><Play :size="16" /> {{ loaded ? 'Show report' : 'Loading...' }}</button>
             <button class="btn" @click="resetFilters">Clear filters</button>
           </div>
         </div>
       </div>
 
-      <!-- 4. Results: only the rows scroll -->
-      <div ref="listBox" class="table-wrap list-scroll">
-        <table class="table report-table" :style="{ minWidth: tableMin + 'px' }">
-          <colgroup><col v-for="c in columns" :key="c.key" :style="{ width: colWidth(c) }" /></colgroup>
-          <thead><tr><th v-for="c in columns" :key="c.key" :class="{ num: isNum(c) }" :title="c.label">{{ c.label }}</th></tr></thead>
-          <tbody>
-            <tr v-for="(r, i) in rows" :key="i" :class="{ click: !!link(r) }" @click="open(r)">
-              <td v-for="c in columns" :key="c.key" :class="{ num: isNum(c), label: c.key === 'group' || r.is_total, totalrow: r.is_total }" :title="cell(r, c)">
-                <span v-if="CODES.has(c.key) && getPath(r, c.key)" class="code-tag">{{ getPath(r, c.key) }}</span>
-                <span v-else-if="c.kind === 'done'" class="done-mark" :class="{ done: getPath(r, c.key) }">{{ getPath(r, c.key) ? 'Done' : 'Not yet' }}</span>
-                <span v-else-if="c.kind === 'progress'" class="prog" :title="`${r.done} of ${r.total} done`">
-                  <span class="prog-bar"><i :style="{ width: r.percent + '%' }"></i></span><b>{{ r.percent }}%</b>
-                </span>
-                <template v-else>{{ cell(r, c) }}</template>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="!loaded" class="empty">Loading...</div>
-        <div v-else-if="!rows.length" class="empty">Nothing matches these filters.</div>
-      </div>
+      </template>
 
-      <div class="pager">
-        <span class="pager-info">
-          <b>{{ n(count) }}</b> {{ current.unit || 'record(s)' }}
-          <template v-if="current.total && loaded"> · {{ current.totalLabel || 'Total' }}: <b>{{ current.total === 'money' ? money(totalValue) : n(totalValue) }}</b></template>
-        </span>
-        <span v-if="loaded && rows.length < count" class="muted small">
-          Showing the first {{ n(rows.length) }}. Narrow the filters, or use Excel (CSV) to get all {{ n(count) }}.
-        </span>
-      </div>
+      <!-- 4. Results, in a large window (like the Payment records details) -->
+      <Teleport to="body">
+        <div v-if="resultsOpen" class="rr-backdrop" @mousedown.self="resultsOpen = false">
+          <div class="rr-window" role="dialog" :aria-label="current.title">
+            <div class="rr-head">
+              <div class="rr-title">
+                <h2>{{ current.title }}</h2>
+                <p class="muted small" :title="filterText">{{ filterText || 'No filters: everything' }}</p>
+              </div>
+              <!-- Search while typing. On a report with a search filter the whole list is searched; otherwise the rows shown here. -->
+              <div class="live-search rr-search">
+                <Search :size="17" />
+                <input ref="winSearch" v-model="winQ" :placeholder="hasQ ? searchHint : 'Search these results'" autocomplete="off"
+                       @input="typing.soon" @keydown.enter="typing.now" />
+                <button v-if="winQ" type="button" class="live-clear" title="Clear" @click="winQ = ''; typing.now()"><X :size="16" /></button>
+              </div>
+              <div class="rr-stats">
+                <span class="today-stat"><b>{{ n(count) }}</b> {{ current.unit || 'record(s)' }}</span>
+                <span v-if="current.total && loaded" class="today-stat"><b>{{ current.total === 'money' ? money(totalValue) : n(totalValue) }}</b> {{ current.totalLabel || 'Total' }}</span>
+              </div>
+              <div class="actions">
+                <button class="btn" :disabled="!rows.length || exporting" @click="exportAll"><Download :size="16" /> {{ exporting ? 'Preparing...' : 'Excel (CSV)' }}</button>
+                <button class="btn primary" :disabled="!rows.length" @click="preview = true"><FileText :size="16" /> Preview &amp; print</button>
+                <button class="icon-btn" aria-label="Close" title="Close (Esc)" @click="resultsOpen = false"><X :size="22" /></button>
+              </div>
+            </div>
+            <div ref="listBox" class="table-wrap list-scroll">
+              <table class="table report-table" :style="{ minWidth: tableMin + 'px' }">
+                <colgroup><col v-for="c in columns" :key="c.key" :style="{ width: colWidth(c) }" /></colgroup>
+                <thead><tr><th v-for="c in columns" :key="c.key" :class="{ num: isNum(c) }" :title="c.label">{{ c.label }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="(r, i) in shownRows" :key="i" :class="{ click: !!link(r) }" @click="open(r)">
+                    <td v-for="c in columns" :key="c.key" :class="{ num: isNum(c), label: c.key === 'group' || r.is_total, totalrow: r.is_total }" :title="cell(r, c)">
+                      <span v-if="CODES.has(c.key) && getPath(r, c.key)" class="code-tag">{{ getPath(r, c.key) }}</span>
+                      <span v-else-if="c.key === 'group' && !r.is_total" class="group-tag">{{ cell(r, c) }}</span>
+                      <span v-else-if="c.kind === 'done'" class="done-mark" :class="{ done: getPath(r, c.key) }">{{ getPath(r, c.key) ? 'Done' : 'Not yet' }}</span>
+                      <span v-else-if="c.kind === 'progress'" class="prog" :title="`${r.done} of ${r.total} done`">
+                        <span class="prog-bar"><i :style="{ width: r.percent + '%' }"></i></span><b>{{ r.percent }}%</b>
+                      </span>
+                      <template v-else>{{ cell(r, c) }}</template>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-if="!loaded" class="empty">Loading...</div>
+              <div v-else-if="!shownRows.length" class="empty">{{ winQ ? `Nothing matches "${winQ}".` : 'Nothing matches these filters.' }}</div>
+            </div>
+
+            <div class="pager">
+              <span class="pager-info">
+                <b>{{ n(shownCount) }}</b> {{ current.unit || 'record(s)' }}<template v-if="localOnly"> of {{ n(count) }}</template>
+                <template v-if="current.total && loaded && !localOnly"> · {{ current.totalLabel || 'Total' }}: <b>{{ current.total === 'money' ? money(totalValue) : n(totalValue) }}</b></template>
+              </span>
+              <span v-if="loaded && rows.length < count" class="muted small">
+                Showing the first {{ n(rows.length) }}. Narrow the filters, or use Excel (CSV) to get all {{ n(count) }}.
+              </span>
+            </div>
+
+          </div>
+        </div>
+      </Teleport>
     </div>
 
     <!-- 5. Print preview, laid out like a PDF page -->
@@ -131,31 +150,36 @@
             <button class="btn" @click="preview = false"><X :size="16" /> Close</button>
           </div>
         </div>
+        <!-- One sheet per A4 page, exactly as it will print. The column headings repeat on every page. -->
         <div class="pdf-stage">
-          <div class="paper" :class="orientation">
-            <div class="paper-head">
-              <div>
-                <div class="paper-lib">{{ appSettings.library_name }}</div>
-                <div class="paper-addr">{{ [appSettings.library_address, appSettings.library_phone].filter(Boolean).join(' · ') }}</div>
+          <div v-for="(page, pi) in paperPages" :key="pi + orientation" class="paper" :class="orientation">
+            <template v-if="pi === 0">
+              <div class="paper-head">
+                <div>
+                  <div class="paper-lib">{{ printName(appSettings) }}<template v-if="appSettings.library_place">, {{ appSettings.library_place }}</template></div>
+                  <div class="paper-addr">{{ [appSettings.library_address, appSettings.library_phone].filter(Boolean).join(' · ') }}</div>
+                </div>
+                <div class="paper-date">Printed {{ fmtDate(isoDate()) }}</div>
               </div>
-              <div class="paper-date">Printed {{ fmtDate(isoDate()) }}</div>
-            </div>
-            <h1 class="paper-title">{{ current.title }}</h1>
-            <p class="paper-meta">{{ groupOf(current).title }} report<template v-if="filterText"> · {{ filterText }}</template></p>
-            <p class="paper-meta">
-              <b>{{ n(count) }}</b> {{ current.unit || 'record(s)' }}
-              <template v-if="current.total"> · {{ current.totalLabel || 'Total' }}: <b>{{ current.total === 'money' ? money(totalValue) : n(totalValue) }}</b></template>
-              <template v-if="rows.length < count"> · first {{ n(rows.length) }} shown</template>
-            </p>
-            <table class="paper-table">
+              <h1 class="paper-title">{{ current.title }}</h1>
+              <p class="paper-meta">{{ groupOf(current).title }} report<template v-if="filterText || winQ"> · {{ [filterText, winQ && !hasQ ? 'Search: ' + winQ : ''].filter(Boolean).join(', ') }}</template></p>
+              <p class="paper-meta">
+                <b>{{ n(shownCount) }}</b> {{ current.unit || 'record(s)' }}
+                <template v-if="current.total && !localOnly"> · {{ current.totalLabel || 'Total' }}: <b>{{ current.total === 'money' ? money(totalValue) : n(totalValue) }}</b></template>
+                <template v-if="!localOnly && rows.length < count"> · first {{ n(rows.length) }} shown</template>
+              </p>
+            </template>
+            <div v-else class="paper-cont">{{ current.title }} <span>(continued)</span></div>
+            <table class="paper-table" :class="{ dense: paperDense }">
+              <colgroup><col v-for="(c, ci) in columns" :key="c.key" :style="{ width: paperWidths[ci] }" /></colgroup>
               <thead><tr><th v-for="c in columns" :key="c.key" :class="{ num: isNum(c) }">{{ c.label }}</th></tr></thead>
               <tbody>
-                <tr v-for="(r, i) in rows" :key="i">
-                  <td v-for="c in columns" :key="c.key" :class="{ num: isNum(c), wrap: WRAP.has(c.key) }">{{ cell(r, c) }}</td>
+                <tr v-for="(r, i) in page" :key="i" :class="{ totalrow: r.is_total }">
+                  <td v-for="c in columns" :key="c.key" :class="{ num: isNum(c) }" :title="cell(r, c)">{{ cell(r, c) }}</td>
                 </tr>
               </tbody>
             </table>
-            <div class="paper-foot">{{ appSettings.library_name }} · {{ current.title }} · {{ fmtDate(isoDate()) }}</div>
+            <div class="paper-foot">{{ printName(appSettings) }} · {{ current.title }} · {{ fmtDate(isoDate()) }}<span>Page {{ pi + 1 }} of {{ paperPages.length }}</span></div>
           </div>
         </div>
       </div>
@@ -164,21 +188,22 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeftRight, BookOpen, Download, FileText, LayoutGrid, Play, Printer, SlidersHorizontal, Users, Wallet, X } from 'lucide-vue-next'
+import { ArrowLeftRight, BookOpen, Download, FileText, LayoutGrid, Play, Printer, Search, SlidersHorizontal, Users, Wallet, X } from 'lucide-vue-next'
 import DateInput from '../components/DateInput.vue'
 import { api } from '../api'
 import { appSettings } from '../store'
 import { BOOK_STATUS, MEMBERSHIP_TYPES, PAYMENT_TYPES, SECTIONS } from '../constants'
-import { exportCsv, fmtDate, formatCell, getPath, isoDate, money } from '../utils'
+import { exportCsv, fmtDate, formatCell, getPath, isoDate, money, printName } from '../utils'
+import { latestOnly, useLiveSearch } from '../liveSearch'
 
 // ---------- building blocks ----------
 const col = (key, label, kind, num) => ({ key, label, kind, num })
 const csvOnly = (c) => ({ ...c, csv: true })
 // Long text columns may wrap; everything else stays on one line.
 // Acc. No. and Membership No. are shown in a small bordered box.
-const CODES = new Set(['acc_no', 'book.acc_no', 'membership_no', 'member.membership_no', 'member_no'])
+const CODES = new Set(['acc_no', 'book.acc_no', 'membership_no', 'member.membership_no', 'member_no', 'receipt_no', 'ref'])
 const WRAP = new Set(['title', 'book.title', 'books', 'address', 'member.address', 'persons', 'name', 'member.name', 'school', 'group', 'call_no', 'telephone', 'member.telephone'])
 const all = (label) => [{ value: '', label }]
 const opt = (list) => list.map((v) => (typeof v === 'string' ? { value: v, label: v } : v))
@@ -247,7 +272,7 @@ const GROUPS = [
 
 const REPORTS = [
   // Books
-  { group: 'books', key: 'book-list', title: 'Book list', url: '/reports/books', limited: true,
+  { group: 'books', key: 'book-list', title: 'Book list', url: '/reports/books', limited: true, popup: true,
     desc: 'Any list of books: combine section, status, subject, date entered and year published.',
     total: 'money', totalLabel: 'Total value', unit: 'book(s)',
     params: [
@@ -455,19 +480,28 @@ REPORTS.forEach((r) => {
 // Every single filter, with from / to pairs opened up again.
 const flatParams = (r) => (r.params || []).flatMap((p) => (p.type === 'range' ? [p.from, p.to] : [p]))
 
+// ---------- search inside the results window ----------
+// A report with a "q" filter (e.g. Book list) is searched on the server, so the whole list is searched.
+// Other reports filter the rows already in the window.
+const hasQ = computed(() => flatParams(current.value).some((p) => p.key === 'q'))
+const searchHint = computed(() => 'Search ' + ((flatParams(current.value).find((p) => p.key === 'q') || {}).label || '').toLowerCase())
+const winQ = ref('')
+const winSearch = ref(null)
+
 // ---------- state ----------
 const route = useRoute()
 const router = useRouter()
-// Opening Reports without choosing one shows the grid of all reports.
-const picking = !REPORTS.some((r) => r.key === route.query.r)
-const pickGroup = ref('')
+// Reports opens on the group tabs (Books first). A link like /reports?r=book-list opens that report.
+const start = REPORTS.find((r) => r.key === route.query.r)
+const group = ref(start?.group || (GROUPS.some((g) => g.key === route.query.g) ? route.query.g : GROUPS[0].key))
+const chosen = ref(!!start) // a report has been picked in this tab
 const tiles = computed(() => REPORTS
   .map((r, i) => ({
-    key: r.key, group: r.group, title: r.title, desc: r.desc, no: String(i + 1).padStart(2, '0'),
-    sub: `${GROUPS.find((g) => g.key === r.group).title} · ${r.params ? r.params.length + (r.params.length === 1 ? ' filter' : ' filters') : 'no filters'}`,
+    key: r.key, group: r.group, title: r.title, desc: r.desc, no: String(i + 1).padStart(2, '0'), report: r,
+    sub: r.params ? r.params.length + (r.params.length === 1 ? ' filter' : ' filters') : 'No filters',
   }))
-  .filter((t) => !pickGroup.value || t.group === pickGroup.value))
-const current = ref(REPORTS.find((r) => r.key === route.query.r) || REPORTS[0])
+  .filter((t) => t.group === group.value))
+const current = ref(start || REPORTS.find((r) => r.group === group.value))
 const params = reactive({})
 const rows = ref([])
 const count = ref(0)
@@ -475,11 +509,24 @@ const totalValue = ref(0)
 const loaded = ref(false)
 const exporting = ref(false)
 const showFilters = ref(true)
+const resultsOpen = ref(false) // a popup report's results window
 const preview = ref(false)
 const orientation = ref('portrait')
 const listBox = ref(null)
+const localOnly = computed(() => !hasQ.value && !!winQ.value.trim())
+const shownRows = computed(() => {
+  const q = winQ.value.trim().toLowerCase()
+  if (hasQ.value || !q) return rows.value
+  return rows.value.filter((r) => columns.value.some((c) => String(cell(r, c) ?? '').toLowerCase().includes(q)))
+})
+const shownCount = computed(() => (localOnly.value ? shownRows.value.length : count.value))
+const fetchRows = latestOnly((params) => api.get(current.value.url, params))
+const typing = useLiveSearch(async () => {
+  if (!hasQ.value) return // the rows in the window are filtered as you type (shownRows)
+  params.q = winQ.value
+  await run()
+})
 
-const groupReports = computed(() => REPORTS.filter((r) => r.group === current.value.group))
 
 const columns = computed(() => current.value.columns.filter((c) => !c.csv))
 const groupOf = (r) => GROUPS.find((g) => g.key === r.group)
@@ -536,29 +583,49 @@ function resetFilters() {
 
 function select(r) {
   current.value = r
+  chosen.value = true
   router.replace({ query: { r: r.key } })
   resetFilters()
-  run()
+  resultsOpen.value = false
+  rows.value = []
+  count.value = 0
+  loaded.value = true
+  // a report with no filters opens its results straight away
+  if (!r.params) run()
 }
 
 async function run() {
   loaded.value = false
-  const r = await api.get(current.value.url, query())
+  const r = await fetchRows(query())
+  if (!r) return // a newer search has already answered
   rows.value = r.items
   count.value = r.count
   totalValue.value = r.total ?? 0
   loaded.value = true
+  if (!resultsOpen.value) {
+    resultsOpen.value = true
+    winQ.value = hasQ.value ? params.q || '' : ''
+    nextTick(() => winSearch.value?.focus())
+  }
   if (listBox.value) listBox.value.scrollTop = 0
 }
 
+// A tab shows its reports; nothing is picked until a tile is clicked
 function selectGroup(g) {
-  if (current.value.group !== g.key) select(REPORTS.find((r) => r.group === g.key))
+  if (group.value === g.key && !chosen.value) return
+  group.value = g.key
+  chosen.value = false
+  resultsOpen.value = false
+  rows.value = []
+  current.value = REPORTS.find((r) => r.group === g.key)
+  router.replace({ query: { g: g.key } })
 }
 
 // Excel export: when only part of a long list is on screen, fetch every row first.
 async function exportAll() {
-  let data = rows.value
-  if (current.value.limited && rows.value.length < count.value) {
+  // searching only the rows in the window: export just those
+  let data = localOnly.value ? shownRows.value : rows.value
+  if (!localOnly.value && current.value.limited && rows.value.length < count.value) {
     exporting.value = true
     try {
       data = (await api.get(current.value.url, query({ limit: 0 }))).items
@@ -593,10 +660,51 @@ function open(r) {
 }
 
 // Print only the preview page; the browser's print window also offers "Save as PDF".
+// ---------- A4 pages for the print preview ----------
+// Every row is one line high, so a fixed number of rows fits on each sheet:
+// the first sheet also has the library name and the report title above the table.
+const ROWS_PER_PAGE = { portrait: { first: 35, next: 39 }, landscape: { first: 22, next: 25 } }
+const paperPages = computed(() => {
+  const per = ROWS_PER_PAGE[orientation.value]
+  const all = shownRows.value
+  const pages = [all.slice(0, per.first)]
+  for (let i = per.first; i < all.length; i += per.next) pages.push(all.slice(i, i + per.next))
+  return pages
+})
+// many columns: smaller text, so more of each value fits (the row height stays the same)
+const paperDense = computed(() => columns.value.length > (orientation.value === 'portrait' ? 7 : 10))
+// Column widths on paper, as shares of the page width (so the table always fits the sheet).
+// Short columns (numbers, dates, money, status) get room for their whole value first;
+// long text (title, name, address...) shares what is left, and is cut with ... when it does not fit.
+const paperWidths = computed(() => {
+  const page = orientation.value === 'portrait' ? 703 : 1032 // A4 width inside the margins, in px
+  const font = paperDense.value ? 9.5 : 11
+  const charW = font * 0.5
+  const headW = (paperDense.value ? 9 : 10.5) * 0.66
+  const pad = paperDense.value ? 10 : 14
+  const sample = shownRows.value.slice(0, 300)
+  const cols = columns.value.map((c) => {
+    const longest = sample.reduce((m, r) => Math.max(m, String(cell(r, c) ?? '').length), 1)
+    const wrap = WRAP.has(c.key)
+    const want = Math.max(c.label.length * headW, Math.min(longest, wrap ? 40 : 22) * charW) + pad
+    return { wrap, want }
+  })
+  const fixed = cols.filter((x) => !x.wrap).reduce((t, x) => t + x.want, 0)
+  const wanted = cols.filter((x) => x.wrap).reduce((t, x) => t + x.want, 0)
+  let w
+  if (fixed + wanted <= page) w = cols.map((x) => x.want) // everything fits: share out the spare room below
+  else if (wanted && page - fixed >= 70 * cols.filter((x) => x.wrap).length) {
+    const room = page - fixed
+    w = cols.map((x) => (x.wrap ? (x.want / wanted) * room : x.want))
+  } else w = cols.map((x) => (x.wrap ? Math.min(x.want, 70) : x.want))
+  const total = w.reduce((t, x) => t + x, 0)
+  return w.map((x) => ((x / total) * 100).toFixed(2) + '%')
+})
+
 function printPreview() {
   const style = document.createElement('style')
   style.id = 'report-page-size'
-  style.textContent = `@page { size: A4 ${orientation.value}; margin: 12mm; }`
+  style.textContent = `@page { size: A4 ${orientation.value}; margin: 0; }`
   document.head.appendChild(style)
   document.documentElement.classList.add('print-preview')
   const done = () => {
@@ -609,9 +717,14 @@ function printPreview() {
 }
 
 // Close the preview with the Escape key.
-const onKey = (e) => { if (e.key === 'Escape') preview.value = false }
-watch(preview, (open) => (open ? window.addEventListener('keydown', onKey) : window.removeEventListener('keydown', onKey)))
+// Esc closes the print preview first, then the results window
+const onKey = (e) => {
+  if (e.key !== 'Escape') return
+  if (preview.value) preview.value = false
+  else resultsOpen.value = false
+}
+watch(() => preview.value || resultsOpen.value, (open) => (open ? window.addEventListener('keydown', onKey) : window.removeEventListener('keydown', onKey)))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
-if (!picking) select(current.value)
+if (start) select(start)
 </script>

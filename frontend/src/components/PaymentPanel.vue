@@ -3,30 +3,33 @@
        extra charges staff can add, other payments, and the receipts of this visit.
        Used on the Payment screen and as the Payment step of Issue book. -->
   <div v-if="st" class="card pay-step">
-    <div class="ret-head">
-      <div>
-        <h2 style="margin: 0">{{ st.member.name }}</h2>
-        <div class="muted small">{{ st.member.membership_no }} · {{ typeLabel(st.member.membership_type) }}
-          · {{ st.member.membership_type === 'LIFETIME' ? 'Life time member' : st.member.expiry_date ? (st.member.is_expired ? 'membership expired ' : 'membership until ') + fmtDate(st.member.expiry_date) : 'no expiry date' }}</div>
+    <!-- Who and how much: stays in view while the list below scrolls (inside Issue book) -->
+    <div class="pay-top">
+      <div class="ret-head">
+        <div>
+          <h2 style="margin: 0">{{ st.member.name }}</h2>
+          <div class="muted small">{{ st.member.membership_no }} · {{ typeLabel(st.member.membership_type) }}
+            · {{ st.member.membership_type === 'LIFETIME' ? 'Life time member' : st.member.expiry_date ? (st.member.is_expired ? 'membership expired ' : 'membership until ') + fmtDate(st.member.expiry_date) : 'no expiry date' }}</div>
+        </div>
+        <router-link v-if="!flow" :to="'/members/' + st.member.id" class="btn sm"><UserRound :size="15" /> Open profile</router-link>
       </div>
-      <router-link v-if="!flow" :to="'/members/' + st.member.id" class="btn sm"><UserRound :size="15" /> Open profile</router-link>
-    </div>
 
-    <div class="pay-sum">
-      <div class="pay-sum-tile" :class="unpaid > 0 ? 'owe' : 'ok'">
-        <component :is="unpaid > 0 ? CircleAlert : Check" :size="20" />
-        <span><small>To pay now</small><strong>{{ money(unpaid) }}</strong>
-          <small>{{ unpaid > 0 ? st.fines.length + ' book(s) with charges' : 'Nothing owed' }}</small></span>
-      </div>
-      <div class="pay-sum-tile">
-        <Wallet :size="20" />
-        <span><small>Paid in this visit</small><strong>{{ money(paidTotal) }}</strong>
-          <small>{{ paid.length ? paid.length + ' receipt(s)' : 'No payment yet' }}</small></span>
-      </div>
-      <div class="pay-sum-tile">
-        <BookOpen :size="20" />
-        <span><small>Books with the member</small><strong>{{ st.loans.length }} of {{ st.max_books }}</strong>
-          <small>{{ st.can_borrow }} card(s) free</small></span>
+      <div class="pay-sum">
+        <div class="pay-sum-tile" :class="unpaid > 0 ? 'owe' : 'ok'">
+          <component :is="unpaid > 0 ? CircleAlert : Check" :size="20" />
+          <span><small>To pay now</small><strong>{{ money(unpaid) }}</strong>
+            <small>{{ unpaid > 0 ? st.fines.length + ' book(s) with charges' : 'Nothing owed' }}</small></span>
+        </div>
+        <div class="pay-sum-tile">
+          <Wallet :size="20" />
+          <span><small>Paid in this visit</small><strong>{{ money(paidTotal) }}</strong>
+            <small>{{ paid.length ? paid.length + ' receipt(s)' : 'No payment yet' }}</small></span>
+        </div>
+        <div class="pay-sum-tile">
+          <BookOpen :size="20" />
+          <span><small>Books with the member</small><strong>{{ st.loans.length }} of {{ st.max_books }}</strong>
+            <small>{{ st.can_borrow }} card(s) free</small></span>
+        </div>
       </div>
     </div>
 
@@ -87,18 +90,17 @@
 
     <template v-if="paid.length">
       <h3 class="pay-h">Paid in this visit</h3>
-      <div v-for="p in paid" :key="p.id" class="other-pay-done">
+      <div v-for="r in receipts" :key="r.receipt_no" class="other-pay-done">
         <CircleCheck :size="16" />
-        <span>{{ PAYMENT_TYPES[p.payment_type] || p.payment_type }}<template v-if="p.book_acc_no"> · {{ p.book_acc_no }}</template>
-          · <strong>{{ money(p.amount) }}</strong> · Receipt {{ p.receipt_no }}<template v-if="p.ref"> · Ref {{ p.ref }}</template></span>
-        <button class="icon-btn" title="Print receipt again" @click="openPrint('/print/receipt/' + p.id)"><Printer :size="16" /></button>
+        <span>Receipt {{ r.receipt_no }} · <strong>{{ money(r.total) }}</strong> · {{ r.what }}</span>
+        <button class="icon-btn" title="Print receipt again" @click="openPrint('/print/receipt/' + r.id)"><Printer :size="16" /></button>
       </div>
     </template>
 
     <!-- One button pays everything owed. (Inside Issue book the buttons are in the bar at the bottom of the page.) -->
     <div v-if="!flow" class="pay-actions">
       <router-link v-if="st.loans.length" :to="'/return?member=' + st.member.id" class="btn"><ArrowDownLeft :size="17" /> Return books</router-link>
-      <router-link v-if="!unpaid && st.can_borrow > 0 && !st.blocks.length" :to="'/issue?member=' + st.member.id" class="btn"><ArrowUpRight :size="17" /> Issue books</router-link>
+      <router-link v-if="st.can_borrow > 0 && !st.blocks.length" :to="'/issue?member=' + st.member.id" class="btn"><ArrowUpRight :size="17" /> Issue books</router-link>
       <button v-if="unpaid > 0" class="btn success big" :disabled="busy" @click="collectAll"><Printer :size="20" /> Collect all · {{ money(unpaid) }}</button>
       <button class="btn big" :class="{ primary: !(unpaid > 0) }" @click="emit('done')"><Check :size="20" /> {{ doneLabel }}</button>
     </div>
@@ -130,6 +132,18 @@ const unpaid = computed(() => (st.value?.fines || []).reduce((s, l) => s + l.bal
 // A book of this member was marked damaged or missing (at a return, or by a charge already added)
 const hasMarks = computed(() => [...(st.value?.loans || []), ...(st.value?.recent_returns || []), ...(st.value?.fines || [])]
   .some((l) => l.is_damaged || l.is_lost))
+// Payments of this visit, one line per receipt
+const receipts = computed(() => {
+  const byNo = new Map()
+  for (const p of paid.value) {
+    const r = byNo.get(p.receipt_no) || { receipt_no: p.receipt_no, id: p.id, total: 0, kinds: new Set(), books: 0 }
+    r.total += Number(p.amount)
+    r.kinds.add(PAYMENT_TYPES[p.payment_type] || p.payment_type)
+    if (p.book_acc_no) r.books += 1
+    byNo.set(p.receipt_no, r)
+  }
+  return [...byNo.values()].map((r) => ({ ...r, what: [...r.kinds].join(', ') + (r.books ? ` · ${r.books} book(s)` : '') }))
+})
 const paidTotal = computed(() => paid.value.reduce((t, p) => t + Number(p.amount), 0))
 
 // ---- extra charge: damaged (a book they have, or returned lately) or missing (a book they still have) ----
@@ -174,18 +188,15 @@ async function addCharge() {
 // Collect what is owed for one or more books (linked to the book and its reference), then print
 async function collect(fines) {
   busy.value = true
-  const ids = []
   try {
-    for (const l of fines) {
-      const p = await api.post('/payments', { member_id: st.value.member.id, loan_id: l.id, payment_type: 'AUTO', amount: l.balance, notes: dueText(l) })
-      ids.push(p.id)
-      paid.value.push(p)
-    }
-    toast('Payment saved')
+    // everything owed, paid together on ONE receipt (one line per book inside it)
+    const ps = await api.post('/payments/collect', { member_id: st.value.member.id, loan_ids: fines.map((l) => l.id) })
+    paid.value.push(...ps)
+    toast(`Payment saved. Receipt ${ps[0].receipt_no}`)
+    openPrint('/print/receipt/' + ps[0].id)
   } catch (e) {
     toast(e.message, 'error')
   } finally {
-    if (ids.length) openPrint('/print/receipt/' + ids.join(','))
     await load()
     busy.value = false
   }

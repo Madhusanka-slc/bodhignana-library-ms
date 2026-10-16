@@ -11,7 +11,8 @@ from ..models import AVAILABLE, DAMAGED, ISSUED, LOST, Book, Loan, Member, User,
 from ..schemas import BookOut, CancelIssueIn, ChargeIn, IssueIn, LoanOut, MemberOut, PaymentOut, ReturnIn, ReturnManyIn
 from ..services import (calc_late, compute_due_date, damage_fine_for, find_book_by_code, find_member_by_code,
                         get_settings, issue_fee_for, loan_payment_type, log_action, lost_fine_for,
-                        max_books_for, next_txn_ref, non_lending_sections, num, record_payment)
+                        max_books_for, next_receipt_no, next_txn_ref, non_lending_sections, num,
+                        record_payment)
 
 router = APIRouter(prefix="/api/circulation", tags=["issue & return"])
 
@@ -58,7 +59,7 @@ def _member_status(m: Member, st: dict) -> dict:
     fines = [l for l in m.loans if l.balance > 0]
     unpaid = sum(l.balance for l in fines)
     if unpaid > 0:
-        warnings.append(f"Unpaid charges: Rs. {unpaid:.2f}. They must be paid before more books are issued.")
+        warnings.append(f"Unpaid charges: Rs. {unpaid:.2f}. They are added to this visit's payment.")
     recent_from = date.today() - timedelta(days=60)
     recent = [l for l in m.loans if l.return_date and l.return_date >= recent_from and not l.is_lost]
     return {
@@ -97,9 +98,8 @@ def issue_books(data: IssueIn, db: Session = Depends(get_db), user: User = Depen
         raise HTTPException(400, "This member is not active")
     if m.is_expired:
         raise HTTPException(400, f"Membership expired on {m.expiry_date}. Please renew first.")
-    unpaid = sum(l.balance for l in m.loans)
-    if unpaid > 0:
-        raise HTTPException(400, f"This member has unpaid charges of Rs. {unpaid:.2f}. Please collect them first.")
+    # Unpaid charges from earlier (e.g. a late return) do not stop an issue: they are paid on the
+    # Payment step together with this issue's fees, on one receipt.
     max_books = max_books_for(m, st)
     if len(m.active_loans) + len(acc_nos) > max_books:
         raise HTTPException(400, f"This member can have only {max_books} book(s) at a time "
@@ -213,7 +213,7 @@ def return_preview(acc_no: str, damaged: bool = False, lost: bool = False, retur
 
 
 def _do_return(db: Session, user: User, st: dict, loan: Loan, returned: date, damaged: bool, notes: str,
-               collect: bool, lost: bool = False):
+               collect: bool, lost: bool = False, receipt: list = None):
     """Mark one loan returned (or the book missing), work out its charges from its own due date,
     and take the payment if asked."""
     f = _fines(db, loan, returned, damaged, st, lost)
@@ -234,7 +234,10 @@ def _do_return(db: Session, user: User, st: dict, loan: Loan, returned: date, da
     if collect and loan.balance > 0:  # everything still owed for this book (fee not yet paid, and penalties)
         note = ", ".join(x for x in (f"{f['late_days']} late day(s)" if f["late_fine"] else "",
                                      "damaged" if f["damage_fine"] else "", "missing" if lost else "") if x)
-        payment = record_payment(db, loan.member, loan.balance, loan_payment_type(loan), user, loan=loan, notes=note)
+        if receipt is not None and not receipt:  # the first payment of this return gives the receipt its number
+            receipt.append(next_receipt_no(db))
+        payment = record_payment(db, loan.member, loan.balance, loan_payment_type(loan), user, loan=loan, notes=note,
+                                 receipt_no=receipt[0] if receipt else None)
     detail = []
     if f["late_days"] and not lost:
         detail.append(f"{f['late_days']} day(s) late")
@@ -276,8 +279,9 @@ def return_many(data: ReturnManyIn, db: Session = Depends(get_db), user: User = 
         raise HTTPException(400, "The same book is in the list twice")
     loans = [(_active_loan(db, i.acc_no), i.damaged, i.lost) for i in data.items]
     results = []
+    receipt = []  # one receipt for everything paid at this return
     for loan, damaged, lost in loans:
-        payment, f = _do_return(db, user, st, loan, returned, damaged, data.notes, data.collect_payment, lost)
+        payment, f = _do_return(db, user, st, loan, returned, damaged, data.notes, data.collect_payment, lost, receipt)
         results.append((loan, payment, f))
     db.commit()
     member = loans[0][0].member

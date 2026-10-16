@@ -114,12 +114,15 @@ function step(n) {
 }
 
 function place() {
+  // On a big monitor the app is enlarged (see main.js): positions measured on screen are in
+  // screen pixels, the ones we set are in the app's own units, so divide by the enlargement.
+  const z = parseFloat(document.documentElement.style.zoom) || 1
   const r = box.value.getBoundingClientRect()
-  const h = 340
+  const h = 340 * z
   const below = window.innerHeight - r.bottom > h + 8
   pos.value = {
-    left: Math.max(8, Math.min(r.left, window.innerWidth - 300)) + 'px',
-    top: (below ? r.bottom + 6 : Math.max(8, r.top - h - 6)) + 'px',
+    left: Math.max(8, Math.min(r.left, window.innerWidth - 300 * z)) / z + 'px',
+    top: (below ? r.bottom + 6 : Math.max(8, r.top - h - 6)) / z + 'px',
   }
 }
 

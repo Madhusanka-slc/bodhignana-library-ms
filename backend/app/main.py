@@ -17,6 +17,9 @@ def upgrade_db():
     loan_cols = {c["name"] for c in inspect(engine).get_columns("loans")}
     book_cols = {c["name"] for c in inspect(engine).get_columns("books")}
     member_cols = {c["name"] for c in inspect(engine).get_columns("members")}
+    # Look everything up BEFORE changing anything: a look-up made while the change below is still open would wait for it forever
+    payment_cols = {c["name"] for c in inspect(engine).get_columns("payments")}
+    receipt_unique = any(ix["name"] == "ix_payments_receipt_no" and ix.get("unique") for ix in inspect(engine).get_indexes("payments"))
     with engine.begin() as conn:
         if "returned_at" not in loan_cols:
             conn.execute(text("ALTER TABLE loans ADD COLUMN returned_at TIMESTAMP"))
@@ -26,7 +29,11 @@ def upgrade_db():
             conn.execute(text("ALTER TABLE loans ADD COLUMN is_lost BOOLEAN NOT NULL DEFAULT FALSE"))
             conn.execute(text("ALTER TABLE loans ADD COLUMN lost_fine NUMERIC(10, 2) NOT NULL DEFAULT 0"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_loans_ref ON loans (ref)"))
-        if "ref" not in {c["name"] for c in inspect(engine).get_columns("payments")}:
+        # receipt numbers may now repeat (one receipt for several books): the index must not be unique
+        if receipt_unique:
+            conn.execute(text("DROP INDEX ix_payments_receipt_no"))
+            conn.execute(text("CREATE INDEX ix_payments_receipt_no ON payments (receipt_no)"))
+        if "ref" not in payment_cols:
             conn.execute(text("ALTER TABLE payments ADD COLUMN ref VARCHAR(20) NOT NULL DEFAULT ''"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_payments_ref ON payments (ref)"))
         if "cover_image" not in book_cols:

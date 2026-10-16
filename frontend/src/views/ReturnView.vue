@@ -1,18 +1,21 @@
 <template>
   <div>
-    <div class="page-head">
-      <div>
-        <h1>Return book</h1>
-        <p class="sub">Scan the member card. Their borrowed books show straight away: tick the ones being handed back.</p>
+    <!-- Title and steps stay at the top; only what is below them scrolls -->
+    <div class="flow-top">
+      <div class="page-head">
+        <div>
+          <h1>Return book</h1>
+          <p class="sub">Scan the member card. Their borrowed books show straight away: tick the ones being handed back.</p>
+        </div>
+        <button v-if="st || done" class="btn" @click="next"><RotateCcw :size="16" /> Start again</button>
       </div>
-      <button v-if="st || done" class="btn" @click="next"><RotateCcw :size="16" /> Start again</button>
-    </div>
 
-    <div class="steps">
-      <div class="step" :class="{ on: step === 'scan', done: step !== 'scan' }"><b>1</b> Member</div>
-      <div class="step" :class="{ on: step === 'check', done: step === 'pay' || step === 'done' }"><b>2</b> Books</div>
-      <div v-if="needsPay" class="step" :class="{ on: step === 'pay', done: step === 'done' }"><b>3</b> Pay</div>
-      <div class="step" :class="{ on: step === 'done' }"><b>{{ needsPay ? 4 : 3 }}</b> Done</div>
+      <div class="steps">
+        <div class="step" :class="{ on: step === 'scan', done: step !== 'scan' }"><b>1</b> Member</div>
+        <div class="step" :class="{ on: step === 'check', done: step === 'pay' || step === 'done' }"><b>2</b> Books</div>
+        <div v-if="needsPay" class="step" :class="{ on: step === 'pay', done: step === 'done' }"><b>3</b> Pay</div>
+        <div class="step" :class="{ on: step === 'done' }"><b>{{ needsPay ? 4 : 3 }}</b> Done</div>
+      </div>
     </div>
 
     <!-- Finished -->
@@ -34,7 +37,7 @@
         <div class="idone-tile" :class="done.total > 0 && !receipts.length ? 'owe' : done.total > 0 ? 'fee' : ''">
           <Banknote :size="22" />
           <span><small>Charges for this return</small><strong>{{ done.total > 0 ? money(done.total) : 'None' }}</strong>
-            <small>{{ done.total > 0 ? (receipts.length ? 'Paid · receipt ' + done.items.filter((r) => r.payment).map((r) => r.payment.receipt_no).join(', ') : 'Not paid: the member cannot borrow until it is paid')
+            <small>{{ done.total > 0 ? (receipts.length ? 'Paid · receipt ' + done.items.filter((r) => r.payment).map((r) => r.payment.receipt_no).join(', ') : 'Not paid: added to their next payment')
               : 'On time and in good condition' }}</small></span>
         </div>
         <div class="idone-tile">
@@ -63,8 +66,8 @@
       </div>
 
       <div class="idone-actions">
-        <button v-if="receipts.length" class="btn" @click="printReceipts"><Printer :size="17" /> Print receipt</button>
-        <router-link v-if="done.total > 0 && !receipts.length" :to="'/pay?member=' + done.status.member.id" class="btn"><Banknote :size="17" /> Pay now</router-link>
+        <button v-if="receipts.length" class="btn big" @click="printReceipts"><Printer :size="20" /> Print receipt</button>
+        <router-link v-if="done.total > 0 && !receipts.length" :to="'/pay?member=' + done.status.member.id" class="btn big"><Banknote :size="20" /> Pay now</router-link>
         <router-link v-if="done.status.can_borrow > 0 && !(done.total > 0 && !receipts.length)" :to="'/issue?member=' + done.status.member.id" class="btn big">
           <ArrowUpRight :size="20" /> Issue books to this member
         </router-link>
@@ -90,11 +93,11 @@
         </tbody>
       </table>
       <div class="pay-actions">
-        <button class="btn" @click="step = 'check'"><ChevronLeft :size="18" /> Back</button>
-        <button class="btn" :disabled="busy" @click="confirm(false)">Return without paying</button>
+        <button class="btn big" @click="step = 'check'"><ChevronLeft :size="20" /> Back</button>
+        <button class="btn big" :disabled="busy" @click="confirm(false)">Return without paying</button>
         <button class="btn success big" :disabled="busy" @click="confirm(true)"><Printer :size="20" /> Collect {{ money(total) }} and return</button>
       </div>
-      <p class="muted small" style="margin: 10px 0 0; text-align: right">If not paid now, the member cannot borrow books until the fine is paid.</p>
+      <p class="muted small" style="margin: 10px 0 0; text-align: right">If not paid now, it is added to the member's next payment (for example when they next borrow books).</p>
     </div>
 
     <!-- Step 1: the member (same as Issue book), then step 2: their books -->

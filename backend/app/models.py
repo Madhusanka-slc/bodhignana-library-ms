@@ -282,7 +282,8 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    receipt_no: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+    # One receipt can cover several books: each book's payment is its own row, all with the same receipt number
+    receipt_no: Mapped[str] = mapped_column(String(30), index=True)
     member_id: Mapped[int] = mapped_column(ForeignKey("members.id"), index=True)
     loan_id: Mapped[Optional[int]] = mapped_column(ForeignKey("loans.id"), nullable=True)
     payment_type: Mapped[str] = mapped_column(String(30), default="OTHER")

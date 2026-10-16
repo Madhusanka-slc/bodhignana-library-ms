@@ -10,7 +10,7 @@
         <div class="top">
           <img class="qr" :src="qrUrl(b.acc_no, 5)" alt="" @load="loaded++" />
           <div class="txt">
-            <div class="lib">{{ s.library_name }}</div>
+            <div class="lib">{{ printName(s) }}</div>
             <div class="acc">{{ b.acc_no }}</div>
             <div v-if="b.call_no" class="call">{{ b.call_no }}</div>
             <div class="ttl">{{ b.title }}</div>
@@ -26,6 +26,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, barcodeUrl, qrUrl } from '../api'
+import { printName } from '../utils'
 
 const route = useRoute()
 const books = ref([])

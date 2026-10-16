@@ -2,13 +2,13 @@
   <router-view v-if="$route.meta.bare" />
   <div v-else class="layout">
     <aside class="sidebar no-print">
-      <div class="brand">
+      <router-link to="/" class="brand" title="Go to Home">
         <div class="brand-mark"><BookOpen :size="22" /></div>
         <div class="brand-text">
           <strong>{{ appSettings.library_name }}</strong>
           <span>Library system</span>
         </div>
-      </div>
+      </router-link>
 
       <nav>
         <router-link v-for="item in mainMenu" :key="item.to" :to="item.to"
@@ -58,14 +58,21 @@
   <PrintPreview />
 
   <div class="toasts">
-    <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">{{ t.message }}</div>
+    <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type" :role="t.type === 'error' ? 'alert' : 'status'">
+      <component :is="t.type === 'error' ? CircleAlert : t.type === 'info' ? Info : CircleCheck" :size="20" />
+      <div class="toast-text">
+        <strong>{{ t.type === 'error' ? 'Problem' : t.type === 'info' ? 'Note' : 'Done' }}</strong>
+        <span>{{ t.message }}</span>
+      </div>
+      <button class="toast-x" aria-label="Close" @click="toasts.splice(toasts.indexOf(t), 1)"><X :size="15" /></button>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDownLeft, ArrowUpRight, Banknote, BarChart3, BookOpen, CalendarDays, LayoutDashboard, Library, LogOut, Search, Settings, UserCircle, Users, Wallet } from 'lucide-vue-next'
+import { ArrowDownLeft, ArrowUpRight, Banknote, BarChart3, BookOpen, CalendarDays, CircleAlert, CircleCheck, Info, LayoutDashboard, Library, LogOut, Search, Settings, UserCircle, Users, Wallet, X } from 'lucide-vue-next'
 import Modal from './components/Modal.vue'
 import PrintPreview from './components/PrintPreview.vue'
 import { api } from './api'

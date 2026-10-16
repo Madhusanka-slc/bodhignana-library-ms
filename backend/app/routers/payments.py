@@ -6,18 +6,20 @@ from sqlalchemy.orm import Session
 from ..auth import current_user
 from ..database import get_db
 from ..models import Loan, Member, Payment, User
-from ..schemas import PaymentIn, PaymentOut
-from ..services import loan_payment_type, log_action, record_payment
+from ..schemas import CollectIn, PaymentIn, PaymentOut
+from ..services import loan_payment_type, log_action, next_receipt_no, record_payment
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 
 @router.get("", response_model=list[PaymentOut])
-def list_payments(member_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_db),
+def list_payments(member_id: Optional[int] = None, receipt_no: str = "", limit: int = 100, db: Session = Depends(get_db),
                   _: User = Depends(current_user)):
     q = db.query(Payment)
     if member_id:
         q = q.filter(Payment.member_id == member_id)
+    if receipt_no:  # every line of one receipt
+        return q.filter(Payment.receipt_no == receipt_no).order_by(Payment.id).all()
     return q.order_by(Payment.id.desc()).limit(min(limit, 1000)).all()
 
 
@@ -43,6 +45,33 @@ def create_payment(data: PaymentIn, db: Session = Depends(get_db), user: User = 
     db.commit()
     db.refresh(p)
     return p
+
+
+@router.post("/collect", response_model=list[PaymentOut])
+def collect(data: CollectIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Pay everything still owed for these books, all on ONE receipt (one line per book inside it)."""
+    m = db.get(Member, data.member_id)
+    if not m:
+        raise HTTPException(404, "Member not found")
+    loans = [db.get(Loan, i) for i in dict.fromkeys(data.loan_ids)]
+    if any(l is None or l.member_id != m.id for l in loans):
+        raise HTTPException(400, "These charges do not belong to this member")
+    owed = [l for l in loans if l.balance > 0]
+    if not owed:
+        raise HTTPException(400, "Nothing is owed for these books")
+    receipt = next_receipt_no(db)
+    payments = []
+    for l in owed:
+        parts = ", ".join({"issue_fee": "issue fee", "late": f"late ({l.late_days} day(s))", "damage": "damaged",
+                           "lost": "missing"}[p["kind"]] for p in l.due_parts)
+        payments.append(record_payment(db, m, l.balance, loan_payment_type(l), user, loan=l, notes=parts, receipt_no=receipt))
+    total = sum(float(p.amount) for p in payments)
+    log_action(db, user, "payment", f"Received Rs. {total:.2f} from {m.name} ({m.membership_no}) for "
+               f"{len(payments)} book(s), receipt {receipt}", "payment", payments[0].id, receipt)
+    db.commit()
+    for p in payments:
+        db.refresh(p)
+    return payments
 
 
 @router.get("/{payment_id}", response_model=PaymentOut)

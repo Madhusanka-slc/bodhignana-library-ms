@@ -14,6 +14,9 @@ export function fmtDateTime(d) {
   return x.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+// The library's name on paper (receipts, cards, labels, reports); the menu uses library_name
+export const printName = (st) => (st && (st.print_name || st.library_name)) || ''
+
 export const money = (v) => 'Rs. ' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export function isoDate(d = new Date()) {

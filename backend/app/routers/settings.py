@@ -19,10 +19,13 @@ def save_settings(data: dict, db: Session = Depends(get_db), user: User = Depend
     before = get_settings(db)
     changed = []
     for key, value in data.items():
-        if key not in DEFAULT_SETTINGS:
+        # the counters (last membership number / issue reference given out) are kept by the system only:
+        # writing back an older value from the screen could give the same number twice
+        if key not in DEFAULT_SETTINGS or key.endswith("_last_no"):
             continue
-        if str(before.get(key, "")) != str(value):
-            changed.append(f"{key.replace('_', ' ')}: {before.get(key, '')} -> {value}")
+        if str(before.get(key, "")) == str(value):
+            continue  # unchanged
+        changed.append(f"{key.replace('_', ' ')}: {before.get(key, '')} -> {value}")
         row = db.get(AppSetting, key)
         if row:
             row.value = str(value)
