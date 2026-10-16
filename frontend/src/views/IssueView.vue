@@ -117,7 +117,6 @@
           <h2>{{ result.loans.length }} book{{ result.loans.length === 1 ? '' : 's' }} issued</h2>
           <div class="muted">to {{ status.member.name }} · {{ status.member.membership_no }}</div>
         </div>
-        <div class="idone-ref"><small>Reference</small><strong>{{ result.ref }}</strong></div>
       </div>
 
       <div class="idone-tiles four">
@@ -176,7 +175,7 @@
 
     <!-- Going back after the books were issued takes the issue back -->
     <Modal v-if="askUndo" title="Go back and change the books?" @close="askUndo = false">
-      <p style="margin: 0">The {{ result.loans.length }} book(s) just issued (reference {{ result.ref }}) will be taken back, so you can change them.
+      <p style="margin: 0">The {{ result.loans.length }} book(s) just issued will be taken back, so you can change them.
         Nothing has been paid for them yet. Then press Issue again.</p>
       <template #footer>
         <button class="btn" @click="askUndo = false">Stay here</button>
@@ -234,7 +233,7 @@ const barNote = computed(() => {
   }
   const who = `${status.value.member.name} · ${status.value.member.membership_no}`
   if (step.value === 2) return basket.value.length ? `${who} · ${basket.value.length} book(s) chosen` : `${who} · scan the books`
-  if (step.value === 3) return `${who} · reference ${result.value.ref}`
+  if (step.value === 3) return `${who} · ${result.loans.length} book(s) issued`
   return payDue.value > 0 ? `${who} · everything is paid together` : `${who} · nothing left to pay`
 })
 

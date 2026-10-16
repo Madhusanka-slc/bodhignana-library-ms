@@ -444,7 +444,7 @@ tr.click:hover .code-tag { border-color: #8a9dd2; background: #fff; }
 .ret-table tr.off .code-tag { opacity: .6; }
 .ret-table input[type=checkbox] { width: 18px; height: 18px; }
 .report-table.ret-table td { text-overflow: clip; }
-.report-table.ret-table td:nth-child(4) { text-overflow: ellipsis; }
+.report-table.ret-table td:nth-child(3) { text-overflow: ellipsis; }
 .ret-table .total-big, .pay-step .total-big { font-size: 20px; }
 .ret-hint { margin: 0 0 10px; padding: 8px 12px; border-radius: 9px; background: var(--blue-50); border: 1px solid var(--blue-100); color: var(--blue-900); font-size: 14px; }
 .ret-foot { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
@@ -501,9 +501,6 @@ button.step.back:hover { border-color: #8a9dd2; box-shadow: 0 0 0 3px var(--blue
 .idone-actions .back-left, .pay-actions .pay-back { margin-right: auto; }
 /* Issue reference number (T2026-000123) */
 .ref-tag { font-size: 12.5px; font-weight: 650; letter-spacing: .01em; color: var(--blue-800); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.idone-ref { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; padding: 6px 14px; border-radius: 10px; background: var(--blue-50); border: 1px solid var(--blue-200); }
-.idone-ref small { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
-.idone-ref strong { font-size: 17px; color: var(--blue-900); font-variant-numeric: tabular-nums; }
 .idone-tiles { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .idone-tile.fee { background: var(--green-bg); border-color: var(--green-line); }
 .idone-tile.owe { background: var(--red-bg); border-color: var(--red-line); }

@@ -53,7 +53,7 @@
           <span class="suggest-box book">{{ firstLetter(r.loan.book.title) }}</span>
           <span class="idone-book-text">
             <strong :title="r.loan.book.title">{{ r.loan.book.title }}</strong>
-            <small><span class="code-tag">{{ r.loan.book.acc_no }}</span> <span v-if="r.loan.ref" class="ref-tag">{{ r.loan.ref }}</span>
+            <small><span class="code-tag">{{ r.loan.book.acc_no }}</span>
               <template v-if="r.total"> · {{ money(r.total) }}</template></small>
           </span>
           <span class="idone-book-due">
@@ -80,16 +80,15 @@
       <h2>Charges to pay</h2>
       <p class="muted">{{ st.member.name }} ({{ st.member.membership_no }})</p>
       <table class="table report-table">
-        <thead><tr><th>Reference</th><th>Acc. No.</th><th>Title</th><th>For</th><th class="num">To pay</th></tr></thead>
+        <thead><tr><th>Acc. No.</th><th>Title</th><th>For</th><th class="num">To pay</th></tr></thead>
         <tbody>
           <tr v-for="r in picked.filter((x) => x.pv.total > 0)" :key="r.loan.id">
-            <td><span class="ref-tag">{{ r.loan.ref || '-' }}</span></td>
             <td><span class="code-tag">{{ r.loan.book.acc_no }}</span></td>
             <td :title="r.loan.book.title">{{ r.loan.book.title }}</td>
             <td>{{ why(r) }}</td>
             <td class="num">{{ money(r.pv.total) }}</td>
           </tr>
-          <tr><td colspan="4" class="totalrow"><strong>Total to pay</strong></td><td class="num totalrow total-big">{{ money(total) }}</td></tr>
+          <tr><td colspan="3" class="totalrow"><strong>Total to pay</strong></td><td class="num totalrow total-big">{{ money(total) }}</td></tr>
         </tbody>
       </table>
       <div class="pay-actions">
@@ -135,12 +134,11 @@
         <p v-if="rows.length && !picked.length" class="ret-hint">Tick each book the member is handing back (or press Tick all).</p>
         <div v-if="!rows.length" class="alert blue">This member has no books to return.</div>
         <table v-else class="table report-table ret-table">
-          <colgroup><col style="width: 48px" /><col style="width: 124px" /><col style="width: 92px" /><col /><col style="width: 108px" /><col style="width: 124px" /><col style="width: 92px" /><col style="width: 132px" /><col style="width: 146px" /></colgroup>
-          <thead><tr><th></th><th>Reference</th><th>Acc. No.</th><th>Title</th><th>Borrowed</th><th>Due</th><th>Late</th><th>Condition</th><th class="num">To pay</th></tr></thead>
+          <colgroup><col style="width: 48px" /><col style="width: 92px" /><col /><col style="width: 108px" /><col style="width: 124px" /><col style="width: 92px" /><col style="width: 132px" /><col style="width: 146px" /></colgroup>
+          <thead><tr><th></th><th>Acc. No.</th><th>Title</th><th>Borrowed</th><th>Due</th><th>Late</th><th>Condition</th><th class="num">To pay</th></tr></thead>
           <tbody>
             <tr v-for="r in rows" :key="r.loan.id" :class="{ off: !r.pick }" @click="r.pick = !r.pick">
               <td @click.stop><input v-model="r.pick" type="checkbox" :aria-label="'Return ' + r.loan.book.acc_no" /></td>
-              <td><span class="ref-tag">{{ r.loan.ref || '-' }}</span></td>
               <td><span class="code-tag">{{ r.loan.book.acc_no }}</span></td>
               <td :title="r.loan.book.title">{{ r.loan.book.title }}</td>
               <td>{{ fmtDate(r.loan.issue_date) }}</td>
@@ -155,7 +153,7 @@
               </td>
               <td class="num"><strong v-if="r.pv && r.pv.total">{{ money(r.pv.total) }}</strong><span v-else>-</span></td>
             </tr>
-            <tr><td colspan="8" class="totalrow"><strong>{{ picked.length }} book(s) ticked · total to pay</strong></td><td class="num totalrow total-big">{{ money(total) }}</td></tr>
+            <tr><td colspan="7" class="totalrow"><strong>{{ picked.length }} book(s) ticked · total to pay</strong></td><td class="num totalrow total-big">{{ money(total) }}</td></tr>
           </tbody>
         </table>
         <p class="muted small">Late fine: first {{ rows[0]?.pv?.grace_days ?? 2 }} day(s) free, then Rs. {{ rows[0]?.pv?.fine_per_day ?? 2 }} per working day. Damaged: {{ rows[0]?.pv?.damage_multiplier ?? 2 }} × book price. Missing: {{ rows[0]?.pv?.lost_multiplier ?? 2 }} × book price (no late fine).</p>

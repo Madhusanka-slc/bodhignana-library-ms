@@ -37,17 +37,16 @@
     <h3 class="pay-h">To pay (worked out automatically, paid all together)</h3>
     <p v-if="!st.fines.length" class="pay-none"><Check :size="16" /> Nothing to pay.</p>
     <table v-else class="table report-table">
-      <colgroup><col style="width: 124px" /><col style="width: 108px" /><col /><col style="width: 30%" /><col style="width: 150px" /></colgroup>
-      <thead><tr><th>Reference</th><th>Acc. No.</th><th>Book</th><th>For</th><th class="num">To pay</th></tr></thead>
+      <colgroup><col style="width: 108px" /><col /><col style="width: 30%" /><col style="width: 150px" /></colgroup>
+      <thead><tr><th>Acc. No.</th><th>Book</th><th>For</th><th class="num">To pay</th></tr></thead>
       <tbody>
         <tr v-for="l in st.fines" :key="l.id">
-          <td><span class="ref-tag">{{ l.ref || '-' }}</span></td>
           <td><span class="code-tag">{{ l.book.acc_no }}</span></td>
           <td :title="l.book.title">{{ l.book.title }}</td>
           <td :title="dueText(l)">{{ dueText(l) }}</td>
           <td class="num"><strong>{{ money(l.balance) }}</strong></td>
         </tr>
-        <tr><td colspan="4" class="totalrow"><strong>Total to pay</strong></td><td class="num totalrow total-big">{{ money(unpaid) }}</td></tr>
+        <tr><td colspan="3" class="totalrow"><strong>Total to pay</strong></td><td class="num totalrow total-big">{{ money(unpaid) }}</td></tr>
       </tbody>
     </table>
 
