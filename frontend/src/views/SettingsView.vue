@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>Settings</h1>
-        <p class="sub">{{ admin ? 'Change a part, then press Save settings.' : 'Only an administrator can change these settings.' }}</p>
+        <p class="sub">{{ admin ? 'Change, then Save.' : 'Only an administrator can change these.' }}</p>
       </div>
     </div>
 
@@ -19,7 +19,7 @@
         <!-- 1. Library -->
         <template v-if="tab === 'library'">
           <h2>Library</h2>
-          <p class="muted small set-help">The menu name shows at the top left. The name on receipts and reports is printed on paper (receipts, cards, labels, reports).</p>
+          <p class="muted small set-help">Menu name: top left. Printed name: receipts, cards, labels, reports.</p>
           <!-- the fields on the left, how the top of a receipt will look on the right -->
           <div class="set-split">
             <div class="set-grid">
@@ -30,9 +30,9 @@
               <div class="field"><label>Telephone</label><input v-model="s.library_phone" /></div>
               <div class="field"><label>Receipt footer text</label><input v-model="s.receipt_footer" /></div>
               <div class="field"><label>Membership No. starts with</label><input v-model="s.membership_prefix" placeholder="Empty = plain numbers" />
-                <small class="muted">Empty gives 10256. "M" gives M10256.</small></div>
+                <small class="muted">e.g. "M" → M10256</small></div>
               <div class="field"><label>Sections that cannot be taken home</label><input v-model="s.non_lending_sections" />
-                <small class="muted">Separate with commas, e.g. Reference</small></div>
+                <small class="muted">Comma separated</small></div>
             </div>
             <div class="set-preview">
               <small>Receipt top</small>
@@ -49,7 +49,7 @@
         <!-- 2. Loans and fines -->
         <template v-else-if="tab === 'loans'">
           <h2>Loans and fines</h2>
-          <p class="muted small set-help">How long a book can be kept, and what is charged when it comes back late, damaged or not at all.</p>
+          <p class="muted small set-help">Loan period and charges.</p>
           <div class="set-tiles">
             <div class="set-tile"><CalendarClock :size="20" /><label>Days a member can keep a book<input v-model.number="s.loan_days" type="number" min="1" /></label></div>
             <div class="set-tile"><Clock :size="20" /><label>Free days after the due date<input v-model.number="s.grace_days" type="number" min="0" /></label></div>
@@ -61,16 +61,14 @@
           </div>
           <div class="set-example">
             <Info :size="18" />
-            <span>With these rules: a book returned <b>{{ exampleDays }} working days late</b> pays <b>Rs. {{ exampleFine }}</b>.
-              A book worth Rs. 500 pays <b>Rs. {{ (500 * Number(s.damage_multiplier || 0)).toFixed(2) }}</b> if damaged and
-              <b>Rs. {{ (500 * Number(s.lost_multiplier || 0)).toFixed(2) }}</b> if missing.</span>
+            <span>Example: <b>{{ exampleDays }} days late</b> = Rs. {{ exampleFine }} · Rs. 500 book damaged = Rs. {{ (500 * Number(s.damage_multiplier || 0)).toFixed(2) }}, missing = Rs. {{ (500 * Number(s.lost_multiplier || 0)).toFixed(2) }}</span>
           </div>
         </template>
 
         <!-- 3. Member types: one row per type, one column per rule -->
         <template v-else-if="tab === 'types'">
           <h2>Member types</h2>
-          <p class="muted small set-help">The rules for each kind of member. Each value can be changed in its box.</p>
+          <p class="muted small set-help">Rules per member type.</p>
           <table class="table report-table set-matrix">
             <colgroup><col style="width: 22%" /><col /><col /><col /><col /></colgroup>
             <thead><tr><th>Member type</th><th>Books at a time</th><th>Fee per book issued (Rs.)</th><th>Membership fee (Rs.)</th><th>Membership lasts (years)</th></tr></thead>
@@ -86,8 +84,7 @@
           </table>
           <div class="set-example">
             <Info :size="18" />
-            <span>Example: an Adult borrowing 2 books pays an issue fee of <b>Rs. {{ (2 * Number(s.issue_fee_adult || 0)).toFixed(2) }}</b>,
-              and a new Adult membership lasts <b>{{ s.membership_years_adult || 0 }} year(s)</b>. 0 means no fee.</span>
+            <span>Example: Adult, 2 books = Rs. {{ (2 * Number(s.issue_fee_adult || 0)).toFixed(2) }} · 0 = no fee</span>
           </div>
         </template>
       </fieldset>
@@ -97,7 +94,7 @@
         <div class="card-head">
           <div>
             <h2 style="margin: 0">Staff accounts</h2>
-            <p class="muted small set-help">Who can sign in. Administrators can also change settings.</p>
+            <p class="muted small set-help">Who can sign in. Only administrators change settings.</p>
           </div>
           <button class="btn primary" @click="openUser()"><UserPlus :size="16" /> Add staff</button>
         </div>
@@ -114,7 +111,7 @@
 
       <!-- Save, at the bottom of the settings parts -->
       <div v-if="admin && tab !== 'staff'" class="set-foot">
-        <span class="muted small">{{ changed ? 'You have changes that are not saved yet.' : 'All changes are saved.' }}</span>
+        <span class="muted small">{{ changed ? 'Not saved yet' : 'All saved' }}</span>
         <button class="btn" :disabled="!changed" @click="undo">Undo changes</button>
         <button class="btn primary" :disabled="!changed" @click="saveSettings"><Save :size="16" /> Save settings</button>
       </div>

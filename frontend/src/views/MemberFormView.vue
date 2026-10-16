@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>{{ isEdit ? 'Edit member' : 'New member' }}</h1>
-        <p class="sub">{{ isEdit ? 'Click a step to change that part, then save.' : 'Fill in each step and press Next. Only the name is required.' }}</p>
+        <p class="sub">{{ isEdit ? 'Change a step, then save.' : 'Only the name is required.' }}</p>
       </div>
     </div>
 

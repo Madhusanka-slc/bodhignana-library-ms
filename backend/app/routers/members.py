@@ -71,6 +71,31 @@ def _apply(db: Session, m: Member, data: MemberIn, st: dict, is_new: bool):
         setattr(m, k, v)
 
 
+@router.get("/cards", response_model=list[MemberOut])
+def cards_of(ids: str = "", db: Session = Depends(get_db), _: User = Depends(current_user)):
+    """The members whose cards are printed together (ids = "1,2,3"), in that order."""
+    wanted = [int(x) for x in ids.split(",") if x.strip().isdigit()][:200]
+    found = {m.id: m for m in db.query(Member).filter(Member.id.in_(wanted)).all()} if wanted else {}
+    return [found[i] for i in wanted if i in found]
+
+
+@router.post("/cards")
+def set_cards(data: DoneIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Mark the cards of several members at once as given / not given."""
+    members = db.query(Member).filter(Member.id.in_(data.ids[:2000])).all() if data.ids else []
+    changed = [m for m in members if m.card_done != data.done]
+    for m in changed:
+        m.card_done = data.done
+        m.card_done_at = datetime.now() if data.done else None
+        m.card_done_by = user.display_name if data.done else ""
+    if changed:
+        nos = ", ".join(m.membership_no for m in changed[:15]) + (" ..." if len(changed) > 15 else "")
+        log_action(db, user, "member_card", f"Marked {len(changed)} member card(s) as {'given' if data.done else 'not given'}: {nos}",
+                   "member", changed[0].id if len(changed) == 1 else None, changed[0].membership_no if len(changed) == 1 else "")
+    db.commit()
+    return {"changed": len(changed)}
+
+
 @router.get("/next-no")
 def next_no(db: Session = Depends(get_db), _: User = Depends(current_user)):
     """The number a new member would get now. Only for showing: the real number is given when saving."""

@@ -1,6 +1,6 @@
 <template>
   <Modal title="Scan with camera" @close="close">
-    <p class="muted">Hold the QR code or barcode in front of the camera.</p>
+    <p class="muted">Hold the code to the camera.</p>
     <div id="camera-reader" class="camera-box"></div>
     <p v-if="error" class="alert red">{{ error }}</p>
   </Modal>

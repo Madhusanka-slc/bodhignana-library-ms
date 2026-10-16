@@ -4,9 +4,9 @@
       <div>
         <h1>{{ isEdit ? 'Edit book' : copyOf ? 'Add another copy' : 'New book' }}</h1>
         <p class="sub">
-          {{ isEdit ? 'Click a step to change that part, then save.'
-            : copyOf ? 'The details are copied from the other copy. Check them, then save. A new Acc. No. is given if you leave it empty.'
-            : 'Fill in each step and press Next. Only the title is required.' }}
+          {{ isEdit ? 'Change a step, then save.'
+            : copyOf ? 'Copied from the other copy. Empty Acc. No. = next number.'
+            : 'Only the title is required.' }}
         </p>
       </div>
     </div>

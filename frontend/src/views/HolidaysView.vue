@@ -4,7 +4,7 @@
     <div class="page-head">
       <div>
         <h1>Holidays calendar</h1>
-        <p class="sub">Click a day to mark it as a holiday, click it again to remove it. Holidays are not counted for late fines.</p>
+        <p class="sub">Click a day to add or remove a holiday. No late fines on holidays.</p>
       </div>
       <div class="actions">
         <button class="btn" @click="changeYear(-1)"><ChevronLeft :size="16" /> {{ year - 1 }}</button>
@@ -109,7 +109,7 @@
         <CalendarX :size="22" />
         <div><strong>{{ longDate(removing.day) }}</strong><span>{{ removing.description }}</span></div>
       </div>
-      <p class="muted" style="margin: 12px 0 0">This day will be counted as an open day again for due dates and late fines.</p>
+      <p class="muted" style="margin: 12px 0 0">It becomes an open day again.</p>
       <template #footer>
         <button class="btn" @click="removing = null">Keep it</button>
         <button class="btn danger" :disabled="busy" @click="confirmRemove"><Trash2 :size="16" /> Remove holiday</button>

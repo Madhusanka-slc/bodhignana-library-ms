@@ -3,12 +3,12 @@
     <div class="page-head">
       <div>
         <h1>Search</h1>
-        <p class="sub">Find a book and where it is, or find a member.</p>
+        <p class="sub">Books and members.</p>
       </div>
     </div>
 
     <div class="card">
-      <ScanBox placeholder="Start typing a title, author, ISBN, Acc. No., keyword, member name or number"
+      <ScanBox placeholder="Title, author, Acc. No., ISBN, member name or no."
         keep live @scan="run" @type="onType" />
       <div class="chips">
         <button class="chip" :class="{ on: !section }" @click="setSection('')">All sections</button>

@@ -54,7 +54,7 @@
          staff can add a further charge; the amount comes from the book's price -->
     <template v-if="hasMarks">
     <h3 class="pay-h">Add a charge (damaged or missing book) <span class="pay-opt">optional</span></h3>
-    <div v-if="!chargeBooks.length && !st.loans.length" class="muted small">This member has no books now and none returned in the last 60 days.</div>
+    <div v-if="!chargeBooks.length && !st.loans.length" class="muted small">No books now or in the last 60 days.</div>
     <div v-else class="other-pay-row">
       <div class="field">
         <label :for="id + 'k'">Charge for</label>
@@ -155,11 +155,11 @@ watch(() => [charge.kind, charge.loan_id], () => {
   charge.amount = chargeLoan.value ? Math.round(Number(chargeLoan.value.book.price || 0) * multiplier.value * 100) / 100 : 0
 })
 const chargeHelp = computed(() => {
-  if (!chargeLoan.value) return `${charge.kind === 'lost' ? 'Missing' : 'Damaged'} book charge = ${multiplier.value} × the book's price (set in Settings).`
+  if (!chargeLoan.value) return `${multiplier.value} × book price`
   const price = Number(chargeLoan.value.book.price || 0)
-  if (!price) return 'This book has no price saved, so type the amount.'
+  if (!price) return 'No price saved: type the amount.'
   return `${multiplier.value} × book price ${money(price)} = ${money(price * multiplier.value)}.`
-    + (charge.kind === 'lost' ? ' The book is marked Lost and taken off the member.' : '')
+    + (charge.kind === 'lost' ? ' Book marked Lost.' : '')
 })
 
 async function load() {

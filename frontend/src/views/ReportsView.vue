@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>Reports</h1>
-        <p class="sub">Pick a group, then a report. Set its filters and press Show report: the results open in a large window.</p>
+        <p class="sub">Pick a report, set filters, then Show report.</p>
       </div>
     </div>
 
@@ -27,7 +27,7 @@
 
       <div v-if="!chosen" class="rr-hint">
         <LayoutGrid :size="22" />
-        <span><strong>Pick a report above.</strong> Its filters show here; then press Show report.</span>
+        <span>Pick a report above.</span>
       </div>
 
       <template v-else>
@@ -80,7 +80,7 @@
             <div class="rr-head">
               <div class="rr-title">
                 <h2>{{ current.title }}</h2>
-                <p class="muted small" :title="filterText">{{ filterText || 'No filters: everything' }}</p>
+                <p class="muted small" :title="filterText">{{ filterText || 'No filters' }}</p>
               </div>
               <!-- Search while typing. On a report with a search filter the whole list is searched; otherwise the rows shown here. -->
               <div class="live-search rr-search">
@@ -273,7 +273,7 @@ const GROUPS = [
 const REPORTS = [
   // Books
   { group: 'books', key: 'book-list', title: 'Book list', url: '/reports/books', limited: true, popup: true,
-    desc: 'Any list of books: combine section, status, subject, date entered and year published.',
+    desc: 'Books by section, status, subject, date or year.',
     total: 'money', totalLabel: 'Total value', unit: 'book(s)',
     params: [
       { key: 'q', label: 'Title, author, publisher, keyword', type: 'text', default: '', wide: true },
@@ -288,7 +288,7 @@ const REPORTS = [
       { key: 'year_to', label: 'Published to (year)', type: 'select', default: '', options: YEAR_OPTS },
     ],
     columns: bookCols },
-  { group: 'books', key: 'new-books', title: 'New books added', url: '/reports/books', limited: true,
+  { group: 'books', key: 'new-books', title: 'New books', url: '/reports/books', limited: true,
     desc: 'Books entered between two dates (this month by default).',
     total: 'money', totalLabel: 'Total value', unit: 'book(s)',
     params: [
@@ -297,7 +297,7 @@ const REPORTS = [
       P.section, { key: 'sort', type: 'hidden', default: 'newest' },
     ],
     columns: bookCols },
-  { group: 'books', key: 'book-problems', title: 'Damaged, lost & withdrawn', url: '/reports/books', limited: true,
+  { group: 'books', key: 'book-problems', title: 'Damaged & lost', url: '/reports/books', limited: true,
     desc: 'Books that are not usable, by status and section.',
     total: 'money', totalLabel: 'Total value', unit: 'book(s)',
     params: [
@@ -305,7 +305,7 @@ const REPORTS = [
       P.section,
     ],
     columns: bookCols },
-  { group: 'books', key: 'book-summary', title: 'Book counts (summary)', url: '/reports/book-summary',
+  { group: 'books', key: 'book-summary', title: 'Book counts', url: '/reports/book-summary',
     desc: 'How many books there are, grouped the way you choose.', total: 'number', totalLabel: 'Total books', unit: 'group(s)',
     params: [
       { key: 'group_by', label: 'Group by', type: 'select', default: 'section', options: opt([
@@ -320,14 +320,14 @@ const REPORTS = [
     params: [P.from(yearStart), P.to(today), P.section, P.top],
     columns: [col('times', 'Times borrowed', null, true), ...bookCols.slice(0, 3), col('section', 'Section'), col('status', 'Status', 'status')] },
   { group: 'books', key: 'never', title: 'Books never borrowed', url: '/reports/never-borrowed', limited: true,
-    desc: 'Books nobody has borrowed yet, useful for weeding or promoting.', unit: 'book(s)',
+    desc: 'Books never borrowed.', unit: 'book(s)',
     params: [P.section, { key: 'subject', label: 'Subject (class No.)', type: 'select', default: '', options: SUBJECT_OPTS },
       { key: 'entered_before', label: 'Entered before', type: 'date', default: '' }],
     columns: bookCols },
 
   // Members
   { group: 'members', key: 'member-list', title: 'Member list', url: '/reports/members', limited: true,
-    desc: 'Any list of members: combine type, age, registration date, expiry and school.', unit: 'member(s)',
+    desc: 'Members by type, age, dates or school.', unit: 'member(s)',
     params: [
       { key: 'q', label: 'Name, No., NIC, phone, address', type: 'text', default: '', wide: true },
       P.membership_type,
@@ -353,25 +353,25 @@ const REPORTS = [
     ],
     columns: [...memberCols.slice(0, 3), col('birthday', 'Birthday', 'date'), ...memberCols.slice(3, 7)] },
   { group: 'members', key: 'new-members', title: 'New members', url: '/reports/members', limited: true,
-    desc: 'Members registered between two dates (this month by default).', unit: 'member(s)',
+    desc: 'Members registered between two dates.', unit: 'member(s)',
     params: [
       { key: 'registered_from', label: 'Registered from', type: 'date', default: monthStart },
       { key: 'registered_to', label: 'Registered to', type: 'date', default: today },
       P.membership_type, { key: 'sort', type: 'hidden', default: 'newest' }, { key: 'active', type: 'hidden', default: 'all' },
     ],
     columns: memberCols },
-  { group: 'members', key: 'expiring', title: 'Memberships expiring or expired', url: '/reports/expiring-members',
+  { group: 'members', key: 'expiring', title: 'Expiring members', url: '/reports/expiring-members',
     desc: 'Members who need to renew.', unit: 'member(s)',
     params: [{ key: 'days', label: 'Expiring within (days)', type: 'number', default: 30 }],
     columns: [...memberCols.slice(0, 3), col('telephone', 'Telephone'), col('expiry_date', 'Expiry date', 'date')] },
   { group: 'members', key: 'inactive', title: 'Non-active members', url: '/reports/inactive-members', limited: true,
-    desc: 'Members who have not borrowed for a while, or are marked not active.', unit: 'member(s)',
+    desc: 'Members not borrowing for a while.', unit: 'member(s)',
     params: [
       { key: 'mode', label: 'Show', type: 'select', default: 'no_borrow', options: [{ value: 'no_borrow', label: 'Not borrowing recently' }, { value: 'status', label: 'Marked as not active' }] },
       { key: 'months', label: 'No borrowing for (months)', type: 'number', default: 6 },
     ],
     columns: [...memberCols.slice(0, 3), col('telephone', 'Telephone'), col('school', 'School'), col('last_borrowed', 'Last borrowed', 'date')] },
-  { group: 'members', key: 'member-summary', title: 'Member counts (summary)', url: '/reports/member-summary',
+  { group: 'members', key: 'member-summary', title: 'Member counts', url: '/reports/member-summary',
     desc: 'How many members there are, grouped the way you choose.', total: 'number', totalLabel: 'Total members', unit: 'group(s)',
     params: [{ key: 'group_by', label: 'Group by', type: 'select', default: 'type', options: opt([
       { value: 'type', label: 'Membership type' }, { value: 'age', label: 'Age group' }, { value: 'year_registered', label: 'Year registered' },
@@ -380,7 +380,7 @@ const REPORTS = [
 
   // Books & members
   { group: 'loans', key: 'loans', title: 'Borrowing records', url: '/reports/loans', limited: true,
-    desc: 'Who took which book and when: filter by date, state, section, member or book.',
+    desc: 'Who took which book, and when.',
     total: 'money', totalLabel: 'Fines charged', unit: 'loan(s)',
     params: [
       P.from(monthStart), P.to(today),
@@ -394,10 +394,10 @@ const REPORTS = [
   { group: 'loans', key: 'overdue', title: 'Overdue books', url: '/reports/overdue', total: 'money', totalLabel: 'Fines so far', unit: 'book(s)',
     desc: 'Books past their due date, with the fine so far.',
     columns: [...loanCols, col('days_overdue', 'Days late', null, true), col('estimated_fine', 'Fine now', 'money')] },
-  { group: 'loans', key: 'pending', title: 'Books out now (pending returns)', url: '/reports/pending-returns', unit: 'book(s)',
+  { group: 'loans', key: 'pending', title: 'Books out now', url: '/reports/pending-returns', unit: 'book(s)',
     desc: 'Every book that is with a member right now.',
     params: [P.section], columns: loanCols },
-  { group: 'loans', key: 'not-returning', title: 'Members not returning books', url: '/reports/members-with-overdue', unit: 'member(s)',
+  { group: 'loans', key: 'not-returning', title: 'Not returning', url: '/reports/members-with-overdue', unit: 'member(s)',
     desc: 'Members to contact about overdue books.',
     columns: [col('member.membership_no', 'Member No.'), col('member.name', 'Name'), col('member.telephone', 'Telephone'),
       col('member.address', 'Address'), col('count', 'Books', null, true), col('books', 'Book details'), col('oldest_due', 'Oldest due date', 'date')] },
@@ -405,14 +405,14 @@ const REPORTS = [
     desc: 'Members who borrowed the most in a period.',
     params: [P.from(yearStart), P.to(today), P.membership_type, P.top],
     columns: [col('times', 'Books borrowed', null, true), ...memberCols.slice(0, 3), col('telephone', 'Telephone'), col('school', 'School')] },
-  { group: 'other', key: 'circulation', title: 'Issues & returns (summary)', url: '/reports/circulation-summary',
-    desc: 'Number of books issued and returned, per day, month, section or member type.', total: 'number', totalLabel: 'Total issued', unit: 'row(s)',
+  { group: 'other', key: 'circulation', title: 'Issues & returns', url: '/reports/circulation-summary',
+    desc: 'Issues and returns per day, month, section or type.', total: 'number', totalLabel: 'Total issued', unit: 'row(s)',
     params: [P.from(yearStart), P.to(today), { key: 'group_by', label: 'Group by', type: 'select', default: 'month', options: opt([
       { value: 'month', label: 'Month' }, { value: 'day', label: 'Day' }, { value: 'section', label: 'Section' }, { value: 'membership_type', label: 'Membership type' }]) }],
     columns: [col('group', 'Group', 'type'), col('issued', 'Issued', null, true), col('returned', 'Returned', null, true),
       col('late', 'Returned late', null, true), col('fines', 'Fines charged', 'money')] },
-  { group: 'other', key: 'label-progress', title: 'Labels & cards progress', url: '/reports/label-progress',
-    desc: 'How many books have their QR label and how many members have their card: done, remaining and percent.',
+  { group: 'other', key: 'label-progress', title: 'Labels & cards', url: '/reports/label-progress',
+    desc: 'QR labels and member cards done.',
     total: 'number', totalLabel: 'Done', unit: 'group(s)',
     params: [{ key: 'what', label: 'Show', type: 'select', default: 'books_section', wide: true, options: opt([
       { value: 'books_section', label: 'Book labels, by section' }, { value: 'books_subject', label: 'Book labels, by subject' },
@@ -420,7 +420,7 @@ const REPORTS = [
     columns: [col('group', 'Group', 'type'), col('total', 'Total', null, true), col('done', 'Done', null, true),
       col('remaining', 'Remaining', null, true), col('percent', 'Progress', 'progress')] },
   { group: 'other', key: 'staff-activity', title: 'Staff activity', url: '/reports/staff-activity', limited: true,
-    desc: 'Who did what and when: issues, returns, new members and books, changes, payments and sign-ins.', unit: 'action(s)',
+    desc: 'Who did what, and when.', unit: 'action(s)',
     params: [
       { key: 'user_id', label: 'Staff', type: 'select', default: '', options: STAFF_OPTS },
       { key: 'action', label: 'Action', type: 'select', default: '', options: ACTION_OPTS },

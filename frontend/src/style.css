@@ -941,6 +941,8 @@ a.ph-phone:hover { border-color: #8a9dd2; box-shadow: 0 0 0 3px var(--blue-100);
 .modal.wide { max-width: 760px; }
 /* Print preview popup */
 .modal.print-pop { max-width: 560px; }
+.modal.print-pop.sheet { max-width: 860px; }
+.modal.print-pop.sheet .print-pop-body iframe { height: min(calc(var(--vh, 100vh) * .7), 760px); }
 .print-pop-body { position: relative; background: #eef0f6; padding: 14px; }
 .print-pop-body iframe { display: block; width: 100%; height: min(calc(var(--vh, 100vh) * .62), 620px); border: 1px solid var(--line); border-radius: 8px; background: #fff; opacity: 0; transition: opacity .15s; }
 .print-pop-body iframe.ready { opacity: 1; }
@@ -1015,8 +1017,12 @@ a.ph-phone:hover { border-color: #8a9dd2; box-shadow: 0 0 0 3px var(--blue-100);
 .hol-tools { flex: none; padding: 14px 18px; margin-bottom: 14px; }
 .hol-tools .filters { margin-bottom: 10px; }
 .hol-tools .hol-legend { margin: 0; }
-.hol-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; overflow-y: auto; }
-.months4 { flex: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding: 3px; }
+.hol-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; overflow: hidden; }
+.months4 { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding: 3px; }
+/* the months fill the free height: day cells stretch instead of staying square, so the page never scrolls */
+.months4 .month { display: flex; flex-direction: column; min-height: 0; }
+.months4 .days { flex: 1; min-height: 0; grid-template-rows: auto repeat(6, minmax(0, 1fr)); }
+.months4 .day { aspect-ratio: auto; min-height: 0; padding: 0; }
 .month { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
 .month:hover { border-color: var(--blue-200); }
 .month h3 { display: flex; justify-content: space-between; align-items: baseline; }

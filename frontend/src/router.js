@@ -22,6 +22,7 @@ const routes = [
   { path: '/settings', component: () => import('./views/SettingsView.vue'), meta: { admin: true } },
   { path: '/print/receipt/:id', component: () => import('./views/PrintReceipt.vue'), meta: { bare: true } },
   { path: '/print/member-card/:id', component: () => import('./views/PrintMemberCard.vue'), meta: { bare: true } },
+  { path: '/print/member-cards', component: () => import('./views/PrintMemberCard.vue'), meta: { bare: true } },
   { path: '/print/book-labels', component: () => import('./views/PrintBookLabels.vue'), meta: { bare: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

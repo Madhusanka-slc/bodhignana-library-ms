@@ -2,7 +2,7 @@
   <!-- Our own print preview: the receipt / card / labels shown in a popup, with Print and Cancel.
        Nothing is sent to the printer until Print is pressed. -->
   <div v-if="printJob.path" class="modal-backdrop" @mousedown.self="close">
-    <div class="modal print-pop" role="dialog" aria-modal="true" :aria-label="printJob.title">
+    <div class="modal print-pop" :class="{ sheet: isSheet }" role="dialog" aria-modal="true" :aria-label="printJob.title">
       <div class="modal-head">
         <h3>{{ printJob.title }}</h3>
         <button class="icon-btn" aria-label="Close" @click="close"><X :size="20" /></button>
@@ -28,6 +28,8 @@ const frame = ref(null)
 const ready = ref(false)
 const printed = ref(false)
 // embed=1 tells the print page it is inside this popup: no buttons of its own, no printing by itself
+// a sheet of several cards or labels (A4) needs a wider window than a receipt
+const isSheet = computed(() => /\/print\/(member-cards|book-labels)/.test(printJob.path))
 const src = computed(() => printJob.path + (printJob.path.includes('?') ? '&' : '?') + 'embed=1')
 
 watch(() => printJob.path, () => {

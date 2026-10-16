@@ -5,7 +5,7 @@
       <div class="page-head">
         <div>
           <h1>Issue book</h1>
-          <p class="sub">Member, then books, then the summary, then payment. Use Back at the bottom to change an earlier step.</p>
+          <p class="sub">Member → books → summary → payment.</p>
         </div>
         <button v-if="status || result" class="btn" @click="reset"><RotateCcw :size="16" /> Start again</button>
       </div>
@@ -20,8 +20,8 @@
 
     <!-- Step 1: the member. The search bar, and below it who was found. -->
     <div v-show="step === 1" class="card">
-      <ScanBox ref="memberScan" label="Scan the member card" placeholder="Scan card, or start typing a name or membership no."
-        hint="Matching members show while you type: click one, or use the arrow keys and Enter." suggest="member"
+      <ScanBox ref="memberScan" label="Scan the member card" placeholder="Scan card, or type name / member no."
+        hint="Type to search, then pick." suggest="member"
         @scan="onMemberScan" @pick="(s) => { error = ''; loadMember(s.id) }" />
       <p v-if="error" class="alert red">{{ error }}</p>
       <div v-if="matches.length" class="mt">
@@ -50,8 +50,8 @@
           </div>
           <p v-for="b in status.blocks" :key="b" class="alert red">{{ b }}</p>
           <p v-if="unpaid > 0" class="alert blue">
-            <strong>Unpaid charges from earlier: {{ money(unpaid) }}</strong> ({{ status.fines.map((l) => l.book.acc_no).join(', ') }}).
-            They are added to this visit's payment, on the same receipt.
+            <strong>Unpaid earlier: {{ money(unpaid) }}</strong> ({{ status.fines.map((l) => l.book.acc_no).join(', ') }}).
+            Added to this payment.
           </p>
           <p v-for="w in status.warnings.filter((x) => !x.startsWith('Unpaid'))" :key="w" class="alert orange">{{ w }}</p>
           <div v-if="status.loans.length" class="mem-sum-books">
@@ -67,13 +67,13 @@
 
     <!-- Step 2: only the books. Same search bar as the member step. -->
     <div v-if="status" v-show="step === 2" class="card">
-      <ScanBox ref="bookScan" label="Scan the book" placeholder="Scan the book QR / barcode, or start typing an Acc. No. or title"
-        hint="Matching books show while you type: click one, or use the arrow keys and Enter." button-text="Add" :disabled="blocked"
+      <ScanBox ref="bookScan" label="Scan the book" placeholder="Scan book, or type Acc. No. / title"
+        hint="Type to search, then pick." button-text="Add" :disabled="blocked"
         suggest="book" @scan="onBookScan" @pick="(s) => onBookScan(s.code)" />
       <p v-if="bookError" class="alert red">{{ bookError }}</p>
 
       <div v-if="choices.length" class="mt">
-        <p class="muted">This ISBN has more than one copy. Choose the copy in your hand:</p>
+        <p class="muted">Several copies. Pick the one in hand:</p>
         <button v-for="b in choices" :key="b.id" class="pick" :disabled="b.status !== 'AVAILABLE'" @click="addBook(b)">
           <span><strong>{{ b.acc_no }}</strong> · {{ b.title }}</span>
           <StatusBadge :status="b.status" />
@@ -105,7 +105,7 @@
 
       <p v-if="status.issue_fee > 0 && basket.length" class="fee-line">
         Issue fee: {{ basket.length }} × {{ money(status.issue_fee) }} = <strong>{{ money(basket.length * status.issue_fee) }}</strong>
-        <span class="muted">&nbsp;({{ typeLabel(status.member.membership_type) }}) · paid on the Payment step<template v-if="unpaid > 0">, with {{ money(unpaid) }} owed from earlier</template></span>
+        <span class="muted">&nbsp;({{ typeLabel(status.member.membership_type) }}) · pay at next step<template v-if="unpaid > 0"> (+ {{ money(unpaid) }} earlier)</template></span>
       </p>
     </div>
 

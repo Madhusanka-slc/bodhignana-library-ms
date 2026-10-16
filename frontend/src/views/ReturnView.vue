@@ -5,7 +5,7 @@
       <div class="page-head">
         <div>
           <h1>Return book</h1>
-          <p class="sub">Scan the member card. Their borrowed books show straight away: tick the ones being handed back.</p>
+          <p class="sub">Scan the member, tick the books returned.</p>
         </div>
         <button v-if="st || done" class="btn" @click="next"><RotateCcw :size="16" /> Start again</button>
       </div>
@@ -96,20 +96,20 @@
         <button class="btn big" :disabled="busy" @click="confirm(false)">Return without paying</button>
         <button class="btn success big" :disabled="busy" @click="confirm(true)"><Printer :size="20" /> Collect {{ money(total) }} and return</button>
       </div>
-      <p class="muted small" style="margin: 10px 0 0; text-align: right">If not paid now, it is added to the member's next payment (for example when they next borrow books).</p>
+      <p class="muted small" style="margin: 10px 0 0; text-align: right">Unpaid amounts go to the next payment.</p>
     </div>
 
     <!-- Step 1: the member (same as Issue book), then step 2: their books -->
     <template v-else>
       <div v-if="!st" class="card">
-        <ScanBox ref="scan" label="Scan the member card" placeholder="Scan card, or start typing a name or membership no."
-          hint="Matching members show while you type: click one, or use the arrow keys and Enter." suggest="member"
+        <ScanBox ref="scan" label="Scan the member card" placeholder="Scan card, or type name / member no."
+          hint="Type to search, then pick." suggest="member"
           @scan="onMemberScan" @pick="(s) => pickMember(s.id)" />
         <p v-if="error" class="alert red">{{ error }}</p>
         <!-- A book was scanned instead of the card: offer the member who has it -->
         <button v-if="holder" class="pick mt" @click="pickMember(holder.id)">
           <span><strong>{{ holder.name }}</strong> <span class="muted">· {{ holder.membership_no }}</span></span>
-          <span class="muted small">Has this book. Click to choose this member.</span>
+          <span class="muted small">Has this book</span>
         </button>
         <div v-if="matches.length" class="mt">
           <p class="muted">Choose the member:</p>
@@ -131,7 +131,7 @@
             <button class="btn sm" @click="setAll(false)">Untick all</button>
           </div>
         </div>
-        <p v-if="rows.length && !picked.length" class="ret-hint">Tick each book the member is handing back (or press Tick all).</p>
+        <p v-if="rows.length && !picked.length" class="ret-hint">Tick the books returned.</p>
         <div v-if="!rows.length" class="alert blue">This member has no books to return.</div>
         <table v-else class="table report-table ret-table">
           <colgroup><col style="width: 48px" /><col style="width: 92px" /><col /><col style="width: 108px" /><col style="width: 124px" /><col style="width: 92px" /><col style="width: 132px" /><col style="width: 146px" /></colgroup>
@@ -156,9 +156,9 @@
             <tr><td colspan="7" class="totalrow"><strong>{{ picked.length }} book(s) ticked · total to pay</strong></td><td class="num totalrow total-big">{{ money(total) }}</td></tr>
           </tbody>
         </table>
-        <p class="muted small">Late fine: first {{ rows[0]?.pv?.grace_days ?? 2 }} day(s) free, then Rs. {{ rows[0]?.pv?.fine_per_day ?? 2 }} per working day. Damaged: {{ rows[0]?.pv?.damage_multiplier ?? 2 }} × book price. Missing: {{ rows[0]?.pv?.lost_multiplier ?? 2 }} × book price (no late fine).</p>
+        <p class="muted small">Late: {{ rows[0]?.pv?.grace_days ?? 2 }} day(s) free, then Rs. {{ rows[0]?.pv?.fine_per_day ?? 2 }}/day · Damaged: {{ rows[0]?.pv?.damage_multiplier ?? 2 }}× price · Missing: {{ rows[0]?.pv?.lost_multiplier ?? 2 }}× price</p>
         <div class="ret-foot">
-          <input v-model="notes" placeholder="Notes (optional), e.g. cover torn" />
+          <input v-model="notes" placeholder="Notes (optional)" />
           <button v-if="total > 0" class="btn primary big" :disabled="!picked.length || loading" @click="step = 'pay'">
             Next: pay {{ money(total) }} <ChevronRight :size="20" />
           </button>

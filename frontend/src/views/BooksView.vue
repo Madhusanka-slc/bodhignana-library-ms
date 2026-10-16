@@ -20,7 +20,7 @@
           <label for="bq">Search</label>
           <div class="live-search">
             <Search :size="17" />
-            <input id="bq" v-model="q" placeholder="Start typing a title, author, Acc. No., ISBN or keyword" autocomplete="off"
+            <input id="bq" v-model="q" placeholder="Title, author, Acc. No., ISBN or keyword" autocomplete="off"
                    @input="search.soon" @keydown.enter="search.now" />
             <button v-if="q" type="button" class="live-clear" title="Clear" @click="q = ''; search.now()"><X :size="16" /></button>
           </div>

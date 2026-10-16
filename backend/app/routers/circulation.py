@@ -55,11 +55,11 @@ def _member_status(m: Member, st: dict) -> dict:
         blocks.append(f"This member already has {len(loans)} book(s). The limit is {max_books}.")
     overdue = [l for l in loans if l.is_overdue]
     if overdue:
-        warnings.append(f"{len(overdue)} book(s) are overdue and not returned yet.")
+        warnings.append(f"{len(overdue)} book(s) overdue.")
     fines = [l for l in m.loans if l.balance > 0]
     unpaid = sum(l.balance for l in fines)
     if unpaid > 0:
-        warnings.append(f"Unpaid charges: Rs. {unpaid:.2f}. They are added to this visit's payment.")
+        warnings.append(f"Unpaid: Rs. {unpaid:.2f}, added to this payment.")
     recent_from = date.today() - timedelta(days=60)
     recent = [l for l in m.loans if l.return_date and l.return_date >= recent_from and not l.is_lost]
     return {

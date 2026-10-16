@@ -103,7 +103,7 @@
             <img :src="qrUrl(m.membership_no, 8)" alt="Member QR code" class="zoomable" title="Click to show the code big" @click="showCode = true" />
             <div class="card-tab-info">
               <h2>Member card</h2>
-              <p class="muted">The QR code on the card is scanned at the counter to find {{ m.name }}. Click the code to show it big.</p>
+              <p class="muted">Scanned at the counter. Click to enlarge.</p>
               <div class="actions">
                 <button class="btn primary" @click="openPrint('/print/member-card/' + m.id)"><Printer :size="16" /> Print card</button>
                 <button class="btn" @click="showCode = true"><Maximize2 :size="16" /> Show code big</button>
@@ -142,10 +142,10 @@
         <div class="field wide">
           <label>New expiry date</label>
           <div class="renew-new">{{ m.membership_type === 'LIFETIME' ? 'Life time (no expiry)' : fmtDate(renewUntil) }}</div>
-          <small class="muted">{{ m.membership_type === 'LIFETIME' ? 'Only the renewal date is recorded.' : `${renewYears} year${renewYears === 1 ? '' : 's'} for ${typeLabel(m.membership_type)}, counted from today` }}</small>
+          <small class="muted">{{ m.membership_type === 'LIFETIME' ? 'Only the renewal date is recorded.' : `${renewYears} year${renewYears === 1 ? '' : 's'} from today` }}</small>
         </div>
       </div>
-      <p class="muted small" style="margin: 12px 0 0">Take the membership fee in <router-link to="/payments">Payments</router-link>.</p>
+      <p class="muted small" style="margin: 12px 0 0">Fee: take it in <router-link to="/pay">Payment</router-link>.</p>
       <template #footer>
         <button class="btn" @click="showRenew = false">Cancel</button>
         <button class="btn primary" @click="doRenew"><RefreshCw :size="16" /> Renew</button>

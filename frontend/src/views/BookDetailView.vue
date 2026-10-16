@@ -115,7 +115,7 @@
             <img :src="qrUrl(b.acc_no, 8)" alt="Book QR code" class="zoomable" title="Click to show the code big" @click="zoom = 'qr'" />
             <div class="card-tab-info">
               <h2>QR label</h2>
-              <p class="muted">The label on the book is scanned at the counter to issue and return it. Click a code to show it big.</p>
+              <p class="muted">Scanned at the counter. Click to enlarge.</p>
               <img :src="barcodeUrl(b.acc_no)" alt="Book barcode" class="zoomable label-bar" title="Click to show the barcode big" @click="zoom = 'bar'" />
               <div class="actions">
                 <button class="btn primary" @click="openPrint('/print/book-labels?ids=' + b.id)"><Printer :size="16" /> Print label</button>

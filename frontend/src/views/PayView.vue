@@ -3,15 +3,15 @@
     <div class="page-head">
       <div>
         <h1>Payment</h1>
-        <p class="sub">Collect book fines, a membership fee or any other payment from a member.</p>
+        <p class="sub">Fines, membership and other fees.</p>
       </div>
       <button v-if="memberId" class="btn" @click="startAgain"><RotateCcw :size="16" /> Start again</button>
     </div>
 
     <!-- Find the member -->
     <div v-if="!memberId" class="card">
-      <ScanBox label="Scan the member card" placeholder="Scan card, or start typing a name or membership no."
-        hint="Matching members show while you type: click one, or use the arrow keys and Enter." suggest="member"
+      <ScanBox label="Scan the member card" placeholder="Scan card, or type name / member no."
+        hint="Type to search, then pick." suggest="member"
         @scan="onScan" @pick="(s) => (memberId = s.id)" />
       <p v-if="error" class="alert red">{{ error }}</p>
     </div>
