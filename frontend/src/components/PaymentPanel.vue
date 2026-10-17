@@ -1,11 +1,18 @@
 <template>
   <!-- Everything about paying for one member: what is owed (issue fees, late / damaged / missing charges),
        extra charges staff can add, other payments, and the receipts of this visit.
-       Used on the Payment screen and as the Payment step of Issue book. -->
+       Used on the Payment screen and as the Payment step of Issue book.
+       With member-ids (a group visit: family, friends) it pays for all of them together, on one receipt. -->
   <div v-if="st" class="card pay-step">
     <!-- Who and how much: stays in view while the list below scrolls (inside Issue book) -->
     <div class="pay-top">
-      <div class="ret-head">
+      <div v-if="isGroup" class="ret-head">
+        <div>
+          <h2 style="margin: 0"><Users :size="20" /> Group of {{ sts.length }} members</h2>
+          <div class="muted small">{{ sts.map((x) => `${x.member.name} (${x.member.membership_no})`).join(' · ') }}</div>
+        </div>
+      </div>
+      <div v-else class="ret-head">
         <div>
           <h2 style="margin: 0">{{ st.member.name }}</h2>
           <div class="muted small">{{ st.member.membership_no }} · {{ typeLabel(st.member.membership_type) }}
@@ -18,14 +25,19 @@
         <div class="pay-sum-tile" :class="unpaid > 0 ? 'owe' : 'ok'">
           <component :is="unpaid > 0 ? CircleAlert : Check" :size="20" />
           <span><small>To pay now</small><strong>{{ money(unpaid) }}</strong>
-            <small>{{ unpaid > 0 ? st.fines.length + ' book(s) with charges' : 'Nothing owed' }}</small></span>
+            <small>{{ unpaid > 0 ? fines.length + ' book(s) with charges' : 'Nothing owed' }}</small></span>
         </div>
         <div class="pay-sum-tile">
           <Wallet :size="20" />
           <span><small>Paid in this visit</small><strong>{{ money(paidTotal) }}</strong>
             <small>{{ paid.length ? paid.length + ' receipt(s)' : 'No payment yet' }}</small></span>
         </div>
-        <div class="pay-sum-tile">
+        <div v-if="isGroup" class="pay-sum-tile">
+          <Users :size="20" />
+          <span><small>Members paying together</small><strong>{{ sts.length }}</strong>
+            <small>{{ sts.reduce((t, x) => t + x.loans.length, 0) }} book(s) with them now</small></span>
+        </div>
+        <div v-else class="pay-sum-tile">
           <BookOpen :size="20" />
           <span><small>Books with the member</small><strong>{{ st.loans.length }} of {{ st.max_books }}</strong>
             <small>{{ st.can_borrow }} card(s) free</small></span>
@@ -35,24 +47,31 @@
 
     <!-- Worked out by the system: issue fees and penalties not paid yet -->
     <h3 class="pay-h">To pay (worked out automatically, paid all together)</h3>
-    <p v-if="!st.fines.length" class="pay-none"><Check :size="16" /> Nothing to pay.</p>
+    <p v-if="!fines.length" class="pay-none"><Check :size="16" /> Nothing to pay.</p>
     <table v-else class="table report-table">
       <colgroup><col style="width: 108px" /><col /><col style="width: 30%" /><col style="width: 150px" /></colgroup>
       <thead><tr><th>Acc. No.</th><th>Book</th><th>For</th><th class="num">To pay</th></tr></thead>
-      <tbody>
-        <tr v-for="l in st.fines" :key="l.id">
+      <!-- a group: a heading and subtotal for each member who owes something -->
+      <tbody v-for="x in sts.filter((y) => y.fines.length)" :key="x.member.id">
+        <tr v-if="isGroup" class="rs-member">
+          <td colspan="3"><UserRound :size="15" /> <strong>{{ x.member.name }}</strong> <span class="code-tag">{{ x.member.membership_no }}</span></td>
+          <td class="num"><strong>{{ money(x.fines.reduce((t, l) => t + l.balance, 0)) }}</strong></td>
+        </tr>
+        <tr v-for="l in x.fines" :key="l.id">
           <td><span class="code-tag">{{ l.book.acc_no }}</span></td>
           <td :title="l.book.title">{{ l.book.title }}</td>
           <td :title="dueText(l)">{{ dueText(l) }}</td>
           <td class="num"><strong>{{ money(l.balance) }}</strong></td>
         </tr>
+      </tbody>
+      <tbody>
         <tr><td colspan="3" class="totalrow"><strong>Total to pay</strong></td><td class="num totalrow total-big">{{ money(unpaid) }}</td></tr>
       </tbody>
     </table>
 
     <!-- Only when a book of this member was marked damaged or missing at a return:
          staff can add a further charge; the amount comes from the book's price -->
-    <template v-if="hasMarks">
+    <template v-if="hasMarks && !isGroup">
     <h3 class="pay-h">Add a charge (damaged or missing book) <span class="pay-opt">optional</span></h3>
     <div v-if="!chargeBooks.length && !st.loans.length" class="muted small">No books now or in the last 60 days.</div>
     <div v-else class="other-pay-row">
@@ -82,7 +101,7 @@
     </template>
 
     <!-- Not in the Issue book flow: there only the book charges are paid -->
-    <template v-if="!flow">
+    <template v-if="!flow && !isGroup">
       <h3 class="pay-h">Other payment (membership fee or other)</h3>
       <OtherPayment :member-id="st.member.id" :member-type="st.member.membership_type" hide-list @paid="(p) => paid.push(p)" />
     </template>
@@ -97,7 +116,7 @@
     </template>
 
     <!-- One button pays everything owed. (Inside Issue book the buttons are in the bar at the bottom of the page.) -->
-    <div v-if="!flow" class="pay-actions">
+    <div v-if="!flow && !isGroup" class="pay-actions">
       <router-link v-if="st.loans.length" :to="'/return?member=' + st.member.id" class="btn"><ArrowDownLeft :size="17" /> Return books</router-link>
       <router-link v-if="st.can_borrow > 0 && !st.blocks.length" :to="'/issue?member=' + st.member.id" class="btn"><ArrowUpRight :size="17" /> Issue books</router-link>
       <button v-if="unpaid > 0" class="btn success big" :disabled="busy" @click="collectAll"><Printer :size="20" /> Collect all · {{ money(unpaid) }}</button>
@@ -109,7 +128,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ArrowDownLeft, ArrowUpRight, BookOpen, Check, CircleAlert, CircleCheck, Plus, Printer, UserRound, Wallet } from 'lucide-vue-next'
+import { ArrowDownLeft, ArrowUpRight, BookOpen, Check, CircleAlert, CircleCheck, Plus, Printer, UserRound, Users, Wallet } from 'lucide-vue-next'
 import OtherPayment from './OtherPayment.vue'
 import { api } from '../api'
 import { appSettings, toast } from '../store'
@@ -117,17 +136,21 @@ import { PAYMENT_TYPES, typeLabel } from '../constants'
 import { dueText, fmtDate, money, openPrint } from '../utils'
 
 const props = defineProps({
-  memberId: { type: [Number, String], required: true },
+  memberId: { type: [Number, String], default: null },
+  memberIds: { type: Array, default: null }, // a group visit: several members paying together
   flow: Boolean, // a step inside Issue book: only the Done button, no links to other screens
   doneLabel: { type: String, default: 'Done' },
 })
 const emit = defineEmits(['done', 'back'])
 const id = 'pp-' + Math.random().toString(36).slice(2, 7)
-const st = ref(null) // the member, their books now, books returned lately, and what they owe
+const sts = ref([]) // each member: their books now, books returned lately, and what they owe
+const st = computed(() => sts.value[0] || null) // the member (the first one, in a group)
+const isGroup = computed(() => sts.value.length > 1)
 const error = ref('')
 const busy = ref(false)
 const paid = ref([]) // every payment taken in this visit
-const unpaid = computed(() => (st.value?.fines || []).reduce((s, l) => s + l.balance, 0))
+const fines = computed(() => sts.value.flatMap((x) => x.fines))
+const unpaid = computed(() => fines.value.reduce((s, l) => s + l.balance, 0))
 // A book of this member was marked damaged or missing (at a return, or by a charge already added)
 const hasMarks = computed(() => [...(st.value?.loans || []), ...(st.value?.recent_returns || []), ...(st.value?.fines || [])]
   .some((l) => l.is_damaged || l.is_lost))
@@ -164,7 +187,8 @@ const chargeHelp = computed(() => {
 
 async function load() {
   try {
-    st.value = await api.get(`/circulation/member-status/${props.memberId}`)
+    const ids = props.memberIds?.length ? props.memberIds : [props.memberId]
+    sts.value = await Promise.all(ids.map((i) => api.get(`/circulation/member-status/${i}`)))
   } catch (e) {
     error.value = e.message
   }
@@ -185,11 +209,12 @@ async function addCharge() {
 }
 
 // Collect what is owed for one or more books (linked to the book and its reference), then print
-async function collect(fines) {
+async function collect(list) {
   busy.value = true
   try {
     // everything owed, paid together on ONE receipt (one line per book inside it)
-    const ps = await api.post('/payments/collect', { member_id: st.value.member.id, loan_ids: fines.map((l) => l.id) })
+    // a group: the books of several members, still on one receipt (each line under its own member)
+    const ps = await api.post('/payments/collect', { member_id: isGroup.value ? null : st.value.member.id, loan_ids: list.map((l) => l.id) })
     paid.value.push(...ps)
     toast(`Payment saved. Receipt ${ps[0].receipt_no}`)
     openPrint('/print/receipt/' + ps[0].id)
@@ -201,7 +226,7 @@ async function collect(fines) {
   }
 }
 
-const collectAll = () => collect(st.value.fines)
+const collectAll = () => collect(fines.value)
 // For Issue book, which shows the buttons itself
 defineExpose({ unpaid, busy, collectAll, loaded: computed(() => !!st.value) })
 

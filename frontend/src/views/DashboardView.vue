@@ -91,27 +91,15 @@
 
       <!-- payment: every line of the receipt -->
       <template v-else-if="sel.kind === 'payment'">
-        <p v-if="!lines.length" class="muted">Loading the receipt…</p>
-        <table v-else class="table report-table rs-lines">
-          <colgroup><col style="width: 190px" /><col style="width: 96px" /><col /><col style="width: 140px" /></colgroup>
-          <thead><tr><th>For</th><th>Acc. No.</th><th>Book / details</th><th class="num">Amount</th></tr></thead>
-          <tbody>
-            <tr v-for="p in lines" :key="p.id">
-              <td>{{ PAYMENT_TYPES[p.payment_type] || p.payment_type }}</td>
-              <td><span v-if="p.book_acc_no" class="code-tag">{{ p.book_acc_no }}</span><span v-else>-</span></td>
-              <td :title="[p.book_title, p.notes].filter(Boolean).join(' · ')">{{ [p.book_title, p.payment_type === 'ISSUE_FEE' ? '' : p.notes].filter(Boolean).join(' · ') || '-' }}</td>
-              <td class="num">{{ money(p.amount) }}</td>
-            </tr>
-            <tr><td colspan="3" class="totalrow"><strong>Total</strong></td><td class="num totalrow total-big">{{ money(sel.amount) }}</td></tr>
-          </tbody>
-        </table>
+        <p v-if="!receipt" class="muted">Loading the receipt…</p>
+        <ReceiptLines v-else :receipt="receipt" />
       </template>
 
       <template #footer>
-        <router-link v-if="sel.member_id" :to="'/members/' + sel.member_id" class="btn"><UserRound :size="16" /> Member profile</router-link>
+        <router-link v-if="sel.member_id && !receipt?.isGroup" :to="'/members/' + sel.member_id" class="btn"><UserRound :size="16" /> Member profile</router-link>
         <router-link v-if="sel.book_id" :to="'/books/' + sel.book_id" class="btn"><BookOpen :size="16" /> Book page</router-link>
         <button class="btn" @click="sel = null">Close</button>
-        <button v-if="sel.kind === 'payment' && lines.length" class="btn primary" @click="openPrint('/print/receipt/' + lines[0].id)"><Printer :size="16" /> Print receipt</button>
+        <button v-if="sel.kind === 'payment' && receipt" class="btn primary" @click="openPrint('/print/receipt/' + receipt.id)"><Printer :size="16" /> Print receipt</button>
       </template>
     </Modal>
   </div>
@@ -127,6 +115,8 @@ import { api } from '../api'
 import { auth } from '../store'
 import { fmtDate, money, openPrint } from '../utils'
 import Modal from '../components/Modal.vue'
+import ReceiptLines from '../components/ReceiptLines.vue'
+import { toReceipt } from '../receipts'
 import { PAYMENT_TYPES, typeLabel } from '../constants'
 
 const s = ref(null)
@@ -177,7 +167,8 @@ function subText(e) {
   if (e.kind === 'member') return typeLabel(e.membership_type)
   if (e.kind === 'book') return e.section || 'No section'
   const what = (e.types || [e.payment_type]).map((t) => PAYMENT_TYPES[t] || t).join(' + ')
-  return `${what}${e.lines > 1 ? ` · ${e.lines} books` : ''} · ${e.member_name} (${e.member_no})`
+  const who = e.members && e.members.length > 1 ? `${e.member_name} + ${e.members.length - 1} more (group)` : `${e.member_name} (${e.member_no})`
+  return `${what}${e.lines > 1 ? ` · ${e.lines} books` : ''} · ${who}`
 }
 
 function tagOf(e) {
@@ -189,11 +180,11 @@ function tagOf(e) {
 
 // A click shows the details in a popup (like Payment records); the buttons there open the member or book
 const sel = ref(null)
-const lines = ref([]) // the lines of a payment's receipt
+const receipt = ref(null) // the receipt of a payment line (with a section per member on a group receipt)
 async function openEvent(e) {
   sel.value = e
-  lines.value = []
-  if (e.kind === 'payment' && e.receipt_no) lines.value = await api.get('/payments', { receipt_no: e.receipt_no })
+  receipt.value = null
+  if (e.kind === 'payment' && e.receipt_no) receipt.value = toReceipt(await api.get('/payments', { receipt_no: e.receipt_no }))
 }
 const timeFull = (t) => (t ? new Date(t).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '-')
 const detailTiles = computed(() => {
@@ -209,7 +200,11 @@ const detailTiles = computed(() => {
     { label: 'Address', value: e.address }, by]
   if (e.kind === 'book') return [when, { label: 'Title', value: e.title, sub: e.author }, { label: 'Section', value: e.section },
     { label: 'Call No.', value: e.call_no }, { label: 'Price', value: e.price ? money(e.price) : '' }, by]
-  return [when, { label: 'Total', value: money(e.amount) }, { label: 'Member', value: e.member_name, sub: 'No. ' + e.member_no }, by]
+  const r = receipt.value
+  const who = r && r.isGroup
+    ? { label: 'Group of members', value: `${r.members.length} members`, sub: 'No. ' + r.members.map((m) => m.member_no).join(', ') }
+    : { label: 'Member', value: e.member_name, sub: 'No. ' + e.member_no }
+  return [when, { label: 'Total', value: money(e.amount) }, who, by]
 })
 
 onMounted(async () => {
@@ -226,12 +221,13 @@ function oneLinePerReceipt(items) {
     if (e.kind !== 'payment' || !e.receipt_no) { out.push(e); continue }
     const first = byNo.get(e.receipt_no)
     if (!first) {
-      const copy = { ...e, amount: Number(e.amount), types: [e.payment_type], lines: 1 }
+      const copy = { ...e, amount: Number(e.amount), types: [e.payment_type], lines: 1, members: [e.member_id] }
       byNo.set(e.receipt_no, copy)
       out.push(copy)
     } else {
       first.amount += Number(e.amount)
       first.lines += 1
+      if (!first.members.includes(e.member_id)) first.members.push(e.member_id)
       if (!first.types.includes(e.payment_type)) first.types.push(e.payment_type)
     }
   }

@@ -17,19 +17,26 @@
       <table>
         <tr><td>Receipt No</td><td>{{ r.receipt_no }}</td></tr>
         <tr><td>Date</td><td>{{ fmtDateTime(r.paid_at) }}</td></tr>
-        <tr><td>Member No</td><td>{{ r.member_no }}</td></tr>
-        <tr><td>Name</td><td>{{ r.member_name }}</td></tr>
+        <template v-if="!r.isGroup">
+          <tr><td>Member No</td><td>{{ r.member_no }}</td></tr>
+          <tr><td>Name</td><td>{{ r.member_name }}</td></tr>
+        </template>
+        <tr v-else><td>Members</td><td>{{ r.members.length }} (group)</td></tr>
         <tr v-if="r.refs"><td>Reference</td><td>{{ r.refs }}</td></tr>
       </table>
       <div class="line"></div>
-      <div v-for="(g, i) in r.lines" :key="i" class="item">
-        <div class="item-head"><span>{{ g.label }}<span v-if="g.calc" class="calc">&nbsp;({{ g.calc }})</span></span><span>{{ money(g.total) }}</span></div>
-        <div v-for="(b, j) in g.books" :key="j" class="item-book">
-          <span class="acc">Acc. {{ b.acc }}</span>
-          <span class="ttl">{{ b.title }}<template v-if="b.why"> · {{ b.why }}</template></span>
-          <span v-if="g.books.length > 1" class="amt">{{ money(b.amount) }}</span>
+      <!-- one section per member on a group receipt -->
+      <div v-for="m in r.members" :key="m.member_id" :class="{ 'member-part': r.isGroup }">
+        <div v-if="r.isGroup" class="member-head"><span>{{ m.member_name }} ({{ m.member_no }})</span><span>{{ money(m.total) }}</span></div>
+        <div v-for="(g, i) in m.groups" :key="i" class="item">
+          <div class="item-head"><span>{{ g.label }}<span v-if="g.calc" class="calc">&nbsp;({{ g.calc }})</span></span><span>{{ money(g.total) }}</span></div>
+          <div v-for="(b, j) in g.books" :key="j" class="item-book">
+            <span class="acc">Acc. {{ b.acc }}</span>
+            <span class="ttl">{{ b.title }}<template v-if="b.why"> · {{ b.why }}</template></span>
+            <span v-if="g.books.length > 1" class="amt">{{ money(b.amount) }}</span>
+          </div>
+          <div v-if="g.note" class="item-note">{{ g.note }}</div>
         </div>
-        <div v-if="g.note" class="item-note">{{ g.note }}</div>
       </div>
       <div class="line"></div>
       <div class="amount"><span>TOTAL</span><span>{{ money(r.total) }}</span></div>
@@ -47,48 +54,38 @@ import { useRoute } from 'vue-router'
 import { api } from '../api'
 import { PAYMENT_TYPES } from '../constants'
 import { fmtDateTime, money, printName } from '../utils'
+import { groupReceipts } from '../receipts'
 
 const route = useRoute()
 const list = ref([]) // every payment on the receipt(s) being printed
 
-// One receipt per receipt number. Issue fees are added up into one line ("2 x Rs. 2.00");
-// other charges get a line each, with the book and the reason.
-const receipts = computed(() => {
-  const byNo = new Map()
-  for (const p of list.value) {
-    if (!byNo.has(p.receipt_no)) byNo.set(p.receipt_no, [])
-    byNo.get(p.receipt_no).push(p)
-  }
-  return [...byNo.entries()].map(([no, ps]) => {
-    // One block per kind of charge (issue fees first), and inside it one line per book
-    const order = ['ISSUE_FEE', 'LATE_FINE', 'DAMAGE_FINE', 'LOST_FINE', 'FINE', 'MEMBERSHIP', 'OTHER']
-    const types = [...new Set(ps.map((p) => p.payment_type))].sort((a, b) => order.indexOf(a) - order.indexOf(b))
-    const lines = types.map((type) => {
-      const group = ps.filter((p) => p.payment_type === type)
-      const withBook = group.filter((p) => p.book_acc_no)
-      const each = Number(group[0].amount)
-      const same = group.every((p) => Number(p.amount) === each)
-      return {
-        label: PAYMENT_TYPES[type] || type,
-        total: group.reduce((t, p) => t + Number(p.amount), 0),
-        // e.g. "2 x Rs. 2.00" for issue fees
-        calc: type === 'ISSUE_FEE' && group.length > 1 && same ? `${group.length} x ${money(each)}` : '',
-        books: withBook.map((p) => ({
-          acc: p.book_acc_no, title: p.book_title, amount: Number(p.amount),
-          why: type === 'ISSUE_FEE' ? '' : p.notes,
-        })),
-        note: group.filter((p) => !p.book_acc_no).map((p) => p.notes).filter(Boolean).join('; '),
-      }
-    })
-    const first = ps[0]
+// One receipt per receipt number; on a group receipt, one section per member.
+// Inside, issue fees are added up into one line ("2 x Rs. 2.00"); other charges get a line each, with the book and the reason.
+const ORDER = ['ISSUE_FEE', 'LATE_FINE', 'DAMAGE_FINE', 'LOST_FINE', 'FINE', 'MEMBERSHIP', 'OTHER']
+function chargeGroups(ps) {
+  const types = [...new Set(ps.map((p) => p.payment_type))].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b))
+  return types.map((type) => {
+    const group = ps.filter((p) => p.payment_type === type)
+    const withBook = group.filter((p) => p.book_acc_no)
+    const each = Number(group[0].amount)
+    const same = group.every((p) => Number(p.amount) === each)
     return {
-      receipt_no: no, paid_at: first.paid_at, member_no: first.member_no, member_name: first.member_name, received_by: first.received_by,
-      refs: [...new Set(ps.map((p) => p.ref).filter(Boolean))].join(', '),
-      total: ps.reduce((t, p) => t + Number(p.amount), 0),
-      lines,
+      label: PAYMENT_TYPES[type] || type,
+      total: group.reduce((t, p) => t + Number(p.amount), 0),
+      // e.g. "2 x Rs. 2.00" for issue fees
+      calc: type === 'ISSUE_FEE' && group.length > 1 && same ? `${group.length} x ${money(each)}` : '',
+      books: withBook.map((p) => ({
+        acc: p.book_acc_no, title: p.book_title, amount: Number(p.amount),
+        why: type === 'ISSUE_FEE' ? '' : p.notes,
+      })),
+      note: group.filter((p) => !p.book_acc_no).map((p) => p.notes).filter(Boolean).join('; '),
     }
   })
-})
+}
+const receipts = computed(() => groupReceipts(list.value).map((r) => ({
+  ...r,
+  members: r.members.map((m) => ({ ...m, groups: chargeGroups(m.lines) })),
+})))
 const s = ref({})
 const error = ref('')
 const embed = route.query.embed === '1' // shown inside the app's print preview popup
@@ -147,6 +144,10 @@ td { padding: 1px 0; vertical-align: top; }
 td:first-child { width: 24mm; }
 .amount { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; }
 .item { margin: 4px 0; }
+/* group receipt: each member's name and subtotal, then their lines */
+.member-part + .member-part { margin-top: 6px; padding-top: 5px; border-top: 1px dotted #000; }
+.member-head { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; text-decoration: underline; margin-bottom: 2px; }
+.member-part .item { padding-left: 4px; }
 .item-head { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
 .item-head .calc { font-weight: 400; }
 .item-book { display: flex; gap: 6px; padding-left: 6px; font-size: 10.5px; line-height: 1.35; }

@@ -244,6 +244,17 @@ class IssueIn(BaseModel):
     issue_date: OptDate = None
 
 
+class IssueGroupItem(BaseModel):
+    member_id: int
+    acc_nos: list[str]
+
+
+class IssueGroupIn(BaseModel):
+    """Several members who came together, each with their own books."""
+    items: list[IssueGroupItem]
+    issue_date: OptDate = None
+
+
 class CancelIssueIn(BaseModel):
     """Undo an issue made today (to correct a mistake before the member leaves)."""
     loan_ids: list[int]
@@ -289,8 +300,9 @@ class PaymentIn(BaseModel):
 
 
 class CollectIn(BaseModel):
-    """Pay everything owed for these books at once, on one receipt."""
-    member_id: int
+    """Pay everything owed for these books at once, on one receipt.
+    The books can belong to several members (a group visit); member_id, when given, must own them all."""
+    member_id: Optional[int] = None
     loan_ids: list[int]
 
 

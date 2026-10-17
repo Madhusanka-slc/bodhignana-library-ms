@@ -5,7 +5,7 @@
       <div class="page-head">
         <div>
           <h1>Return book</h1>
-          <p class="sub">Scan the member, tick the books returned.</p>
+          <p class="sub">Scan the member, tick the books returned. Several members can come together.</p>
         </div>
         <button v-if="st || done" class="btn" @click="next"><RotateCcw :size="16" /> Start again</button>
       </div>
@@ -24,70 +24,85 @@
         <span class="idone-ok"><Check :size="26" /></span>
         <div>
           <h2>{{ done.items.length }} book{{ done.items.length === 1 ? '' : 's' }} returned</h2>
-          <div class="muted">by {{ done.status.member.name }} · {{ done.status.member.membership_no }}</div>
+          <div class="muted">by {{ doneGroup ? `${done.statuses.length} members: ${done.statuses.map((s) => s.member.name).join(', ')}` : `${done.status.member.name} · ${done.status.member.membership_no}` }}</div>
         </div>
       </div>
 
       <div class="idone-tiles">
         <div class="idone-tile cards">
           <IdCard :size="22" />
-          <span><small>Give back to the member</small><strong>{{ cardsBack }} card{{ cardsBack === 1 ? '' : 's' }}</strong>
-            <small>They now hold {{ done.status.can_borrow }} of {{ done.status.max_books }} card(s)</small></span>
+          <span><small>Give back to the {{ doneGroup ? 'members' : 'member' }}</small><strong>{{ cardsBack }} card{{ cardsBack === 1 ? '' : 's' }}</strong>
+            <small v-if="doneGroup">to {{ done.statuses.length }} members</small>
+            <small v-else>They now hold {{ done.status.can_borrow }} of {{ done.status.max_books }} card(s)</small></span>
         </div>
         <div class="idone-tile" :class="done.total > 0 && !receipts.length ? 'owe' : done.total > 0 ? 'fee' : ''">
           <Banknote :size="22" />
           <span><small>Charges for this return</small><strong>{{ done.total > 0 ? money(done.total) : 'None' }}</strong>
-            <small>{{ done.total > 0 ? (receipts.length ? 'Paid · receipt ' + done.items.filter((r) => r.payment).map((r) => r.payment.receipt_no).join(', ') : 'Not paid: added to their next payment')
+            <small>{{ done.total > 0 ? (receipts.length ? 'Paid · receipt ' + [...new Set(done.items.filter((r) => r.payment).map((r) => r.payment.receipt_no))].join(', ') : 'Not paid: added to their next payment')
               : 'On time and in good condition' }}</small></span>
         </div>
         <div class="idone-tile">
-          <BookOpen :size="22" />
-          <span><small>Books still with the member</small><strong>{{ done.status.loans.length }} of {{ done.status.max_books }}</strong>
+          <component :is="doneGroup ? Users : BookOpen" :size="22" />
+          <span v-if="doneGroup"><small>Books still with the members</small><strong>{{ done.statuses.reduce((t, s) => t + s.loans.length, 0) }}</strong>
+            <small>{{ done.statuses.map((s) => `${s.member.membership_no}: ${s.loans.length}`).join(' · ') }}</small></span>
+          <span v-else><small>Books still with the member</small><strong>{{ done.status.loans.length }} of {{ done.status.max_books }}</strong>
             <small>{{ done.status.loans.length ? done.status.loans.map((l) => l.book.acc_no).join(', ') : 'All books are back' }}</small></span>
         </div>
       </div>
 
-      <h3 class="idone-h">Returned now</h3>
-      <div class="idone-books">
-        <div v-for="r in done.items" :key="r.loan.id" class="idone-book" :class="{ late: r.loan.is_lost }">
-          <span class="suggest-box book">{{ firstLetter(r.loan.book.title) }}</span>
-          <span class="idone-book-text">
-            <strong :title="r.loan.book.title">{{ r.loan.book.title }}</strong>
-            <small><span class="code-tag">{{ r.loan.book.acc_no }}</span>
-              <template v-if="r.total"> · {{ money(r.total) }}</template></small>
-          </span>
-          <span class="idone-book-due">
-            <span v-if="r.loan.is_lost" class="badge red">Missing</span>
-            <span v-else-if="r.loan.is_damaged" class="badge orange">Damaged: keep aside</span>
-            <span v-else class="badge green">Put back on the shelf</span>
-            <small v-if="!r.loan.is_lost && !r.loan.is_damaged">{{ r.loan.book.location || r.loan.book.section || 'Shelf not set' }}</small>
-          </span>
+      <template v-for="g in doneByMember" :key="g.id">
+        <h3 class="idone-h" :class="{ 'grp-h': doneGroup }">
+          <template v-if="doneGroup"><UserRound :size="16" /> {{ g.name }} <span class="code-tag">{{ g.no }}</span>
+            <small class="muted">· {{ g.items.length }} returned<template v-if="g.total"> · {{ money(g.total) }}</template></small></template>
+          <template v-else>Returned now</template>
+        </h3>
+        <div class="idone-books">
+          <div v-for="r in g.items" :key="r.loan.id" class="idone-book" :class="{ late: r.loan.is_lost }">
+            <span class="suggest-box book">{{ firstLetter(r.loan.book.title) }}</span>
+            <span class="idone-book-text">
+              <strong :title="r.loan.book.title">{{ r.loan.book.title }}</strong>
+              <small><span class="code-tag">{{ r.loan.book.acc_no }}</span>
+                <template v-if="r.total"> · {{ money(r.total) }}</template></small>
+            </span>
+            <span class="idone-book-due">
+              <span v-if="r.loan.is_lost" class="badge red">Missing</span>
+              <span v-else-if="r.loan.is_damaged" class="badge orange">Damaged: keep aside</span>
+              <span v-else class="badge green">Put back on the shelf</span>
+              <small v-if="!r.loan.is_lost && !r.loan.is_damaged">{{ r.loan.book.location || r.loan.book.section || 'Shelf not set' }}</small>
+            </span>
+          </div>
         </div>
-      </div>
+      </template>
 
       <div class="idone-actions">
         <button v-if="receipts.length" class="btn big" @click="printReceipts"><Printer :size="20" /> Print receipt</button>
-        <router-link v-if="done.total > 0 && !receipts.length" :to="'/pay?member=' + done.status.member.id" class="btn big"><Banknote :size="20" /> Pay now</router-link>
-        <router-link v-if="done.status.can_borrow > 0 && !(done.total > 0 && !receipts.length)" :to="'/issue?member=' + done.status.member.id" class="btn big">
+        <router-link v-if="!doneGroup && done.total > 0 && !receipts.length" :to="'/pay?member=' + done.status.member.id" class="btn big"><Banknote :size="20" /> Pay now</router-link>
+        <router-link v-if="!doneGroup && done.status.can_borrow > 0 && !(done.total > 0 && !receipts.length)" :to="'/issue?member=' + done.status.member.id" class="btn big">
           <ArrowUpRight :size="20" /> Issue books to this member
         </router-link>
         <button class="btn primary big" @click="next"><Check :size="20" /> Done · next member</button>
       </div>
     </div>
 
-    <!-- Step 2: pay -->
+    <!-- Step 3: pay (everyone's charges together, one receipt) -->
     <div v-else-if="step === 'pay'" class="card pay-step">
       <h2>Charges to pay</h2>
-      <p class="muted">{{ st.member.name }} ({{ st.member.membership_no }})</p>
-      <table class="table report-table">
+      <p class="muted">{{ isGroup ? `Group of ${groups.length} members: ${groups.map((g) => g.status.member.name).join(', ')}` : `${st.member.name} (${st.member.membership_no})` }}</p>
+      <table class="table report-table rs-lines">
         <thead><tr><th>Acc. No.</th><th>Title</th><th>For</th><th class="num">To pay</th></tr></thead>
-        <tbody>
-          <tr v-for="r in picked.filter((x) => x.pv.total > 0)" :key="r.loan.id">
+        <tbody v-for="g in groups.filter((x) => x.rows.some((r) => r.pick && r.pv?.total > 0))" :key="g.status.member.id">
+          <tr v-if="isGroup" class="rs-member">
+            <td colspan="3"><UserRound :size="15" /> <strong>{{ g.status.member.name }}</strong> <span class="code-tag">{{ g.status.member.membership_no }}</span></td>
+            <td class="num"><strong>{{ money(groupTotal(g)) }}</strong></td>
+          </tr>
+          <tr v-for="r in g.rows.filter((x) => x.pick && x.pv?.total > 0)" :key="r.loan.id">
             <td><span class="code-tag">{{ r.loan.book.acc_no }}</span></td>
             <td :title="r.loan.book.title">{{ r.loan.book.title }}</td>
             <td>{{ why(r) }}</td>
             <td class="num">{{ money(r.pv.total) }}</td>
           </tr>
+        </tbody>
+        <tbody>
           <tr><td colspan="3" class="totalrow"><strong>Total to pay</strong></td><td class="num totalrow total-big">{{ money(total) }}</td></tr>
         </tbody>
       </table>
@@ -101,16 +116,12 @@
 
     <!-- Step 1: the member (same as Issue book), then step 2: their books -->
     <template v-else>
-      <div v-if="!st" class="card">
-        <ScanBox ref="scan" label="Scan the member card" placeholder="Scan card, or type name / member no."
-          hint="Type to search, then pick." suggest="member"
+      <div class="card" :class="{ 'ret-add': st }">
+        <ScanBox ref="scan" :label="st ? 'Add another member, or scan a book (optional)' : 'Scan the member card'"
+          placeholder="Scan card or book, or type name / member no."
+          hint="Type to search, then pick. A scanned book adds the member who has it." suggest="member"
           @scan="onMemberScan" @pick="(s) => pickMember(s.id)" />
         <p v-if="error" class="alert red">{{ error }}</p>
-        <!-- A book was scanned instead of the card: offer the member who has it -->
-        <button v-if="holder" class="pick mt" @click="pickMember(holder.id)">
-          <span><strong>{{ holder.name }}</strong> <span class="muted">· {{ holder.membership_no }}</span></span>
-          <span class="muted small">Has this book</span>
-        </button>
         <div v-if="matches.length" class="mt">
           <p class="muted">Choose the member:</p>
           <button v-for="m in matches" :key="m.id" class="pick" @click="pickMember(m.id)">
@@ -122,7 +133,11 @@
 
       <div v-if="st" class="card">
         <div class="ret-head">
-          <div>
+          <div v-if="isGroup">
+            <h2 style="margin: 0"><Users :size="20" /> Group of {{ groups.length }} members</h2>
+            <div class="muted small">{{ rows.length }} book(s) with them</div>
+          </div>
+          <div v-else>
             <h2 style="margin: 0">{{ st.member.name }}</h2>
             <div class="muted small">{{ st.member.membership_no }} · has {{ st.loans.length }} book(s)</div>
           </div>
@@ -132,12 +147,18 @@
           </div>
         </div>
         <p v-if="rows.length && !picked.length" class="ret-hint">Tick the books returned.</p>
-        <div v-if="!rows.length" class="alert blue">This member has no books to return.</div>
+        <div v-if="!rows.length" class="alert blue">{{ isGroup ? 'These members have' : 'This member has' }} no books to return.</div>
         <table v-else class="table report-table ret-table">
           <colgroup><col style="width: 48px" /><col style="width: 92px" /><col /><col style="width: 108px" /><col style="width: 124px" /><col style="width: 92px" /><col style="width: 132px" /><col style="width: 146px" /></colgroup>
           <thead><tr><th></th><th>Acc. No.</th><th>Title</th><th>Borrowed</th><th>Due</th><th>Late</th><th>Condition</th><th class="num">To pay</th></tr></thead>
-          <tbody>
-            <tr v-for="r in rows" :key="r.loan.id" :class="{ off: !r.pick }" @click="r.pick = !r.pick">
+          <!-- a group: each member's books under their name -->
+          <tbody v-for="(g, gi) in groups" :key="g.status.member.id">
+            <tr v-if="isGroup" class="ret-member">
+              <td colspan="7"><UserRound :size="15" /> <strong>{{ g.status.member.name }}</strong> <span class="code-tag">{{ g.status.member.membership_no }}</span>
+                <span class="muted small"> · {{ g.rows.length ? `has ${g.rows.length} book(s)` : 'no books now' }}</span></td>
+              <td class="num"><button class="btn sm" title="Remove from this visit" @click="removeMember(gi)"><X :size="14" /> Remove</button></td>
+            </tr>
+            <tr v-for="r in g.rows" :key="r.loan.id" :class="{ off: !r.pick }" @click="r.pick = !r.pick">
               <td @click.stop><input v-model="r.pick" type="checkbox" :aria-label="'Return ' + r.loan.book.acc_no" /></td>
               <td><span class="code-tag">{{ r.loan.book.acc_no }}</span></td>
               <td :title="r.loan.book.title">{{ r.loan.book.title }}</td>
@@ -153,6 +174,8 @@
               </td>
               <td class="num"><strong v-if="r.pv && r.pv.total">{{ money(r.pv.total) }}</strong><span v-else>-</span></td>
             </tr>
+          </tbody>
+          <tbody>
             <tr><td colspan="7" class="totalrow"><strong>{{ picked.length }} book(s) ticked · total to pay</strong></td><td class="num totalrow total-big">{{ money(total) }}</td></tr>
           </tbody>
         </table>
@@ -174,18 +197,21 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowUpRight, Banknote, BookOpen, Check, ChevronLeft, ChevronRight, IdCard, Printer, RotateCcw } from 'lucide-vue-next'
+import { ArrowUpRight, Banknote, BookOpen, Check, ChevronLeft, ChevronRight, IdCard, Printer, RotateCcw, UserRound, Users, X } from 'lucide-vue-next'
 import ScanBox from '../components/ScanBox.vue'
 import { api } from '../api'
 import { toast } from '../store'
 import { fmtDate, money, openPrint } from '../utils'
 
 const scan = ref(null)
-const st = ref(null) // the member and the books they have now
-const rows = ref([]) // one per book: { loan, pick, damaged, pv (fine preview) }
+// The members of this visit (usually one; sometimes a family or friends together), each with their books:
+// { status, rows: [{ loan, pick, cond, pv (fine preview) }] }
+const groups = ref([])
+const st = computed(() => groups.value[0]?.status || null) // the (first) member
+const isGroup = computed(() => groups.value.length > 1)
+const rows = computed(() => groups.value.flatMap((g) => g.rows))
 const notes = ref('')
 const error = ref('')
-const holder = ref(null) // who has the book that was scanned on the Member step
 const matches = ref([])
 const step = ref('scan') // scan | check | pay | done
 const done = ref(null)
@@ -194,12 +220,26 @@ const route = useRoute()
 
 const picked = computed(() => rows.value.filter((r) => r.pick))
 const total = computed(() => picked.value.reduce((s, r) => s + (r.pv?.total || 0), 0))
+const groupTotal = (g) => g.rows.filter((r) => r.pick).reduce((s, r) => s + (r.pv?.total || 0), 0)
 const loading = computed(() => picked.value.some((r) => !r.pv))
 // The Pay step is part of this return only when something has to be paid: late, damaged or missing
 const needsPay = computed(() => (step.value === 'done' ? (done.value?.total || 0) > 0 : total.value > 0))
 const cardsBack = computed(() => (done.value?.items || []).length)
 const firstLetter = (t) => ((t || '').replace(/^SAMPLE\s*-\s*/i, '').match(/\p{L}/u) || ['?'])[0].toUpperCase()
 const receipts = computed(() => (done.value?.items || []).filter((r) => r.payment).map((r) => r.payment.id))
+const doneGroup = computed(() => (done.value?.statuses || []).length > 1)
+// The Done screen: the books returned, under each member
+const doneByMember = computed(() => {
+  const out = new Map()
+  for (const r of done.value?.items || []) {
+    const s = (done.value.statuses || [done.value.status]).find((x) => x.member.id === r.loan.member?.id) || done.value.status
+    if (!out.has(s.member.id)) out.set(s.member.id, { id: s.member.id, name: s.member.name, no: s.member.membership_no, items: [], total: 0 })
+    const g = out.get(s.member.id)
+    g.items.push(r)
+    g.total += r.total || 0
+  }
+  return [...out.values()]
+})
 
 function why(r) {
   const parts = []
@@ -211,30 +251,27 @@ function why(r) {
 }
 
 function clear() {
-  st.value = null
-  rows.value = []
+  groups.value = []
   notes.value = ''
   error.value = ''
-  holder.value = null
   matches.value = []
   done.value = null
   step.value = 'scan'
 }
 
-// Step 1: the member card (or a name / number). A book scanned here only points to who has it.
+// A member card (or a name / number). A book scanned here adds the member who has it, with that book ticked.
 async function onMemberScan(code) {
   error.value = ''
-  holder.value = null
   matches.value = []
   try {
     const r = await api.get('/circulation/scan', { code })
     if (r.type === 'member') return pickMember(r.member.id)
     const b = r.type === 'book' ? r.book : (r.books || []).find((x) => x.status === 'ISSUED')
     if (b && b.status === 'ISSUED' && b.borrower_id) {
-      error.value = `That is a book ("${b.title}"). Please choose the member first.`
-      holder.value = { id: b.borrower_id, name: b.borrower_name, membership_no: b.borrower_no }
+      await pickMember(b.borrower_id, b.id)
+      toast(`"${b.title}" is with ${b.borrower_name}: ticked`)
     } else {
-      error.value = 'That is a book, and it is not issued to anyone. Please scan the member card.'
+      error.value = 'That is a book, and it is not issued to anyone.'
     }
   } catch {
     const res = await api.get('/members', { q: code, size: 15 })
@@ -244,24 +281,31 @@ async function onMemberScan(code) {
   }
 }
 
-async function pickMember(id) {
+// Add a member to the visit (tick a book of theirs if one was scanned)
+async function pickMember(id, tickBookId = null) {
   error.value = ''
-  holder.value = null
   matches.value = []
   try {
-    await loadMember(id)
+    let g = groups.value.find((x) => x.status.member.id === Number(id))
+    if (!g) {
+      const s = await api.get(`/circulation/member-status/${id}`)
+      // one member with one book: it is ticked to start with; otherwise tick what is really handed back
+      const alone = !groups.value.length && s.loans.length === 1
+      g = { status: s, rows: s.loans.map((loan) => ({ loan, pick: alone, cond: 'ok', pv: null })) }
+      groups.value.push(g)
+      g = groups.value[groups.value.length - 1]
+      g.rows.forEach(preview)
+    }
+    if (tickBookId) g.rows.forEach((r) => { if (r.loan.book.id === tickBookId) r.pick = true })
+    step.value = 'check'
   } catch (e) {
     error.value = e.message
   }
 }
 
-// The member's books show straight away. Nothing is ticked to start with: tick what is really handed back.
-async function loadMember(id) {
-  const s = await api.get(`/circulation/member-status/${id}`)
-  st.value = s
-  rows.value = s.loans.map((loan) => ({ loan, pick: s.loans.length === 1, cond: 'ok', pv: null }))
-  step.value = 'check'
-  rows.value.forEach(preview)
+function removeMember(i) {
+  groups.value.splice(i, 1)
+  if (!groups.value.length) step.value = 'scan'
 }
 
 async function preview(r) {
@@ -280,6 +324,7 @@ function setAll(on) {
 async function confirm(collect) {
   busy.value = true
   try {
+    // everyone's ticked books at once; what is paid goes on one receipt (each line under its own member)
     done.value = await api.post('/circulation/return-many', {
       items: picked.value.map((r) => ({ acc_no: r.loan.book.acc_no, damaged: r.cond === 'damaged', lost: r.cond === 'lost' })),
       notes: notes.value,

@@ -5,9 +5,9 @@
       <div class="page-head">
         <div>
           <h1>Issue book</h1>
-          <p class="sub">Member → books → summary → payment.</p>
+          <p class="sub">Member → books → summary → payment. Several members can come together.</p>
         </div>
-        <button v-if="status || result" class="btn" @click="reset"><RotateCcw :size="16" /> Start again</button>
+        <button v-if="members.length || result" class="btn" @click="reset"><RotateCcw :size="16" /> Start again</button>
       </div>
 
       <!-- The steps. A step already passed is a button: click it to go back and change something. -->
@@ -16,12 +16,27 @@
                    :class="{ on: step === i + 1, done: step > i + 1, back: step > i + 1 }"
                    :title="step > i + 1 ? 'Go back to ' + name : null" @click="goStep(i + 1)"><b>{{ i + 1 }}</b> {{ name }}</component>
       </div>
+
+      <!-- The members of this visit (family, friends...). Click one to see it; on the Books step, books go to the one highlighted. -->
+      <div v-if="members.length && step <= 2" class="grp-bar">
+        <span class="grp-label">{{ step === 1 ? 'In this visit' : 'Books go to' }}</span>
+        <button v-for="(x, i) in members" :key="x.status.member.id" type="button" class="grp-chip"
+                :class="{ on: i === cur, bad: x.status.blocks.length }" :title="x.status.blocks.join(' ') || 'Click to choose'" @click="pick(i)">
+          <UserRound :size="15" />
+          <strong>{{ x.status.member.name }}</strong>
+          <span class="code-tag">{{ x.status.member.membership_no }}</span>
+          <small v-if="x.status.blocks.length">cannot borrow</small>
+          <small v-else>{{ x.basket.length }} / {{ x.status.can_borrow }}</small>
+          <span class="grp-x" role="button" title="Remove from this visit" @click.stop="removeMember(i)"><X :size="14" /></span>
+        </button>
+        <span v-if="step === 2" class="muted small grp-tip">Scan a member card to switch</span>
+      </div>
     </div>
 
-    <!-- Step 1: the member. The search bar, and below it who was found. -->
+    <!-- Step 1: the members. The search bar, and below it the member chosen. -->
     <div v-show="step === 1" class="card">
-      <ScanBox ref="memberScan" label="Scan the member card" placeholder="Scan card, or type name / member no."
-        hint="Type to search, then pick." suggest="member"
+      <ScanBox ref="memberScan" :label="members.length ? 'Add another member (optional)' : 'Scan the member card'"
+        placeholder="Scan card, or type name / member no." hint="Type to search, then pick." suggest="member"
         @scan="onMemberScan" @pick="(s) => { error = ''; loadMember(s.id) }" />
       <p v-if="error" class="alert red">{{ error }}</p>
       <div v-if="matches.length" class="mt">
@@ -32,7 +47,7 @@
         </button>
       </div>
 
-      <!-- Who was found: check it is the right person, then press Next -->
+      <!-- The member chosen: check it is the right person, then press Next -->
       <div v-if="status" class="mem-sum">
         <MemberPhoto :src="status.member.photo_url" :name="status.member.name" size="lg" />
         <div class="mem-sum-main">
@@ -59,18 +74,19 @@
             <span v-for="l in status.loans" :key="l.id" class="mem-book" :class="{ late: l.is_overdue }" :title="l.book.title">
               <span class="code-tag">{{ l.book.acc_no }}</span> {{ l.book.title }} · due {{ fmtDate(l.due_date) }}
             </span>
-            <router-link :to="'/return?member=' + status.member.id" class="btn sm soft"><ArrowDownLeft :size="15" /> Return books first</router-link>
+            <router-link v-if="!isGroup" :to="'/return?member=' + status.member.id" class="btn sm soft"><ArrowDownLeft :size="15" /> Return books first</router-link>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Step 2: only the books. Same search bar as the member step. -->
+    <!-- Step 2: only the books, for the member highlighted above. Same search bar as the member step. -->
     <div v-if="status" v-show="step === 2" class="card">
-      <ScanBox ref="bookScan" label="Scan the book" placeholder="Scan book, or type Acc. No. / title"
-        hint="Type to search, then pick." button-text="Add" :disabled="blocked"
+      <ScanBox ref="bookScan" :label="isGroup ? `Scan the book for ${status.member.name}` : 'Scan the book'"
+        placeholder="Scan book, or type Acc. No. / title" hint="Type to search, then pick." button-text="Add" :disabled="blocked"
         suggest="book" @scan="onBookScan" @pick="(s) => onBookScan(s.code)" />
       <p v-if="bookError" class="alert red">{{ bookError }}</p>
+      <p v-if="blocked" class="alert red">{{ status.member.name }} cannot borrow now: {{ status.blocks.join(' ') }}</p>
 
       <div v-if="choices.length" class="mt">
         <p class="muted">Several copies. Pick the one in hand:</p>
@@ -82,8 +98,8 @@
 
       <!-- The member's cards: books already borrowed, books being added now, and free places -->
       <div class="slots-head mt">
-        <strong v-if="status.loans.length">Already borrowed {{ status.loans.length }} book{{ status.loans.length === 1 ? '' : 's' }}</strong>
-        <strong v-else>No books borrowed now</strong>
+        <strong v-if="status.loans.length">{{ isGroup ? status.member.name + ': already' : 'Already' }} borrowed {{ status.loans.length }} book{{ status.loans.length === 1 ? '' : 's' }}</strong>
+        <strong v-else>{{ isGroup ? status.member.name + ': no' : 'No' }} books borrowed now</strong>
         <span class="muted">&nbsp;· can take {{ Math.max(0, status.can_borrow - basket.length) }} more (limit {{ status.max_books }})</span>
       </div>
       <div class="slots">
@@ -103,9 +119,16 @@
         </div>
       </div>
 
-      <p v-if="status.issue_fee > 0 && basket.length" class="fee-line">
-        Issue fee: {{ basket.length }} × {{ money(status.issue_fee) }} = <strong>{{ money(basket.length * status.issue_fee) }}</strong>
-        <span class="muted">&nbsp;({{ typeLabel(status.member.membership_type) }}) · pay at next step<template v-if="unpaid > 0"> (+ {{ money(unpaid) }} earlier)</template></span>
+      <!-- A group: what everyone is taking, at a glance -->
+      <div v-if="isGroup" class="grp-sum">
+        <span v-for="x in members" :key="x.status.member.id"><b>{{ x.status.member.name }}</b>
+          {{ x.basket.length ? x.basket.map((b) => b.acc_no).join(', ') : 'no books' }}</span>
+      </div>
+
+      <p v-if="feeTotal > 0 && totalBooks" class="fee-line">
+        Issue fee: <strong>{{ money(feeTotal) }}</strong>
+        <span class="muted">&nbsp;· {{ isGroup ? totalBooks + ' book(s) for ' + members.filter((x) => x.basket.length).length + ' member(s)' : basket.length + ' × ' + money(status.issue_fee) }}
+          · pay at next step<template v-if="unpaidAll > 0"> (+ {{ money(unpaidAll) }} earlier)</template></span>
       </p>
     </div>
 
@@ -115,45 +138,87 @@
         <span class="idone-ok"><Check :size="26" /></span>
         <div>
           <h2>{{ result.loans.length }} book{{ result.loans.length === 1 ? '' : 's' }} issued</h2>
-          <div class="muted">to {{ status.member.name }} · {{ status.member.membership_no }}</div>
+          <div class="muted">to {{ issuedTo }}</div>
         </div>
       </div>
 
-      <div class="idone-tiles four">
-        <div class="idone-tile due">
-          <CalendarClock :size="20" />
-          <span><small>Return on or before</small><strong>{{ fmtDate(result.due_date) }}</strong><small>{{ daysText }}</small></span>
+      <!-- one member -->
+      <template v-if="result.members.length === 1">
+        <div class="idone-tiles four">
+          <div class="idone-tile due">
+            <CalendarClock :size="20" />
+            <span><small>Return on or before</small><strong>{{ fmtDate(result.due_date) }}</strong><small>{{ daysText }}</small></span>
+          </div>
+          <div class="idone-tile cards">
+            <IdCard :size="20" />
+            <span><small>Take from the member</small><strong>{{ result.loans.length }} card{{ result.loans.length === 1 ? '' : 's' }}</strong>
+              <small>They keep {{ res1.status.can_borrow }} of {{ res1.status.max_books }}</small></span>
+          </div>
+          <div class="idone-tile" :class="{ fee: result.fee_total > 0 }">
+            <Banknote :size="20" />
+            <span><small>Issue fee</small><strong>{{ money(result.fee_total) }}</strong>
+              <small>{{ result.fee_total > 0 ? result.loans.length + ' × ' + money(res1.fee_per_book) : 'No fee' }}</small></span>
+          </div>
+          <div class="idone-tile">
+            <BookOpen :size="20" />
+            <span><small>Books with the member now</small><strong>{{ res1.status.loans.length }} of {{ res1.status.max_books }}</strong>
+              <small>{{ res1.status.loans.length - result.loans.length ? (res1.status.loans.length - result.loans.length) + ' borrowed earlier' : 'all issued today' }}</small></span>
+          </div>
         </div>
-        <div class="idone-tile cards">
-          <IdCard :size="20" />
-          <span><small>Take from the member</small><strong>{{ result.loans.length }} card{{ result.loans.length === 1 ? '' : 's' }}</strong>
-            <small>They keep {{ result.status.can_borrow }} of {{ result.status.max_books }}</small></span>
-        </div>
-        <div class="idone-tile" :class="{ fee: result.fee_total > 0 }">
-          <Banknote :size="20" />
-          <span><small>Issue fee</small><strong>{{ money(result.fee_total) }}</strong>
-            <small>{{ result.fee_total > 0 ? result.loans.length + ' × ' + money(result.fee_per_book) : 'No fee' }}</small></span>
-        </div>
-        <div class="idone-tile">
-          <BookOpen :size="20" />
-          <span><small>Books with the member now</small><strong>{{ result.status.loans.length }} of {{ result.status.max_books }}</strong>
-            <small>{{ result.status.loans.length - result.loans.length ? (result.status.loans.length - result.loans.length) + ' borrowed earlier' : 'all issued today' }}</small></span>
-        </div>
-      </div>
 
-      <h3 class="idone-h">All books with the member now</h3>
-      <div class="idone-books compact">
-        <div v-for="l in result.status.loans" :key="l.id" class="idone-book" :class="{ new: isNew(l), late: l.is_overdue }">
-          <span class="code-tag">{{ l.book.acc_no }}</span>
-          <strong :title="l.book.title">{{ l.book.title }}</strong>
-          <span class="badge" :class="isNew(l) ? 'green' : l.is_overdue ? 'red' : 'gray'">{{ isNew(l) ? 'Issued today' : l.is_overdue ? 'Overdue' : 'Borrowed ' + fmtDate(l.issue_date) }}</span>
-          <small>Due {{ fmtDate(l.due_date) }}</small>
+        <h3 class="idone-h">All books with the member now</h3>
+        <div class="idone-books compact">
+          <div v-for="l in res1.status.loans" :key="l.id" class="idone-book" :class="{ new: isNew(l), late: l.is_overdue }">
+            <span class="code-tag">{{ l.book.acc_no }}</span>
+            <strong :title="l.book.title">{{ l.book.title }}</strong>
+            <span class="badge" :class="isNew(l) ? 'green' : l.is_overdue ? 'red' : 'gray'">{{ isNew(l) ? 'Issued today' : l.is_overdue ? 'Overdue' : 'Borrowed ' + fmtDate(l.issue_date) }}</span>
+            <small>Due {{ fmtDate(l.due_date) }}</small>
+          </div>
         </div>
-      </div>
+      </template>
+
+      <!-- a group: totals, then each member's books -->
+      <template v-else>
+        <div class="idone-tiles four">
+          <div class="idone-tile due">
+            <CalendarClock :size="20" />
+            <span><small>Return on or before</small><strong>{{ fmtDate(result.due_date) }}</strong><small>{{ daysText }}</small></span>
+          </div>
+          <div class="idone-tile cards">
+            <IdCard :size="20" />
+            <span><small>Take from the members</small><strong>{{ result.loans.length }} cards</strong>
+              <small>from {{ result.members.length }} members</small></span>
+          </div>
+          <div class="idone-tile" :class="{ fee: result.fee_total > 0 }">
+            <Banknote :size="20" />
+            <span><small>Issue fee (all together)</small><strong>{{ money(result.fee_total) }}</strong>
+              <small>{{ result.fee_total > 0 ? 'paid on one receipt' : 'No fee' }}</small></span>
+          </div>
+          <div class="idone-tile">
+            <Users :size="20" />
+            <span><small>Members</small><strong>{{ result.members.length }}</strong>
+              <small>{{ result.members.map((m) => m.status.member.membership_no).join(', ') }}</small></span>
+          </div>
+        </div>
+
+        <template v-for="m in result.members" :key="m.member_id">
+          <h3 class="idone-h grp-h"><UserRound :size="16" /> {{ m.status.member.name }} <span class="code-tag">{{ m.status.member.membership_no }}</span>
+            <small class="muted">· {{ m.loans.length }} issued now · has {{ m.status.loans.length }} of {{ m.status.max_books }}
+              <template v-if="m.fee_total > 0"> · fee {{ money(m.fee_total) }}</template></small></h3>
+          <div class="idone-books compact">
+            <div v-for="l in m.status.loans" :key="l.id" class="idone-book" :class="{ new: isNew(l), late: l.is_overdue }">
+              <span class="code-tag">{{ l.book.acc_no }}</span>
+              <strong :title="l.book.title">{{ l.book.title }}</strong>
+              <span class="badge" :class="isNew(l) ? 'green' : l.is_overdue ? 'red' : 'gray'">{{ isNew(l) ? 'Issued today' : l.is_overdue ? 'Overdue' : 'Borrowed ' + fmtDate(l.issue_date) }}</span>
+              <small>Due {{ fmtDate(l.due_date) }}</small>
+            </div>
+          </div>
+        </template>
+      </template>
     </div>
 
-    <!-- Step 4: payment for this member. Kept in place while looking back at the summary, so its receipts stay listed. -->
-    <PaymentPanel v-if="result && openedPay" v-show="step === 4" ref="pay" :member-id="status.member.id" flow />
+    <!-- Step 4: payment for the member(s). Kept in place while looking back at the summary, so its receipts stay listed. -->
+    <PaymentPanel v-if="result && openedPay" v-show="step === 4" ref="pay" :member-ids="payIds" flow />
 
     <!-- Always at the bottom of the screen: Back, where you are, and the next thing to do -->
     <div class="flow-bar">
@@ -163,8 +228,8 @@
         <small>{{ barNote }}</small>
       </div>
       <button v-if="step === 1" class="btn primary big" :disabled="!canGoBooks" @click="goBooks">Next: books <ChevronRight :size="20" /></button>
-      <button v-else-if="step === 2" class="btn success big" :disabled="!basket.length || blocked || busy" @click="confirmIssue">
-        <Check :size="20" /> Issue {{ basket.length || '' }} book(s)
+      <button v-else-if="step === 2" class="btn success big" :disabled="!totalBooks || busy" @click="confirmIssue">
+        <Check :size="20" /> Issue {{ totalBooks || '' }} book(s)
       </button>
       <button v-else-if="step === 3" class="btn primary big" @click="openPay"><Banknote :size="20" /> Next: payment <ChevronRight :size="20" /></button>
       <button v-else-if="payDue > 0" class="btn success big" :disabled="pay?.busy" @click="pay.collectAll()">
@@ -189,7 +254,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  ArrowDownLeft, Banknote, BookOpen, CalendarClock, Check, ChevronLeft, ChevronRight, IdCard, Phone, Printer, RotateCcw, X,
+  ArrowDownLeft, Banknote, BookOpen, CalendarClock, Check, ChevronLeft, ChevronRight, IdCard, Phone, Printer, RotateCcw, UserRound, Users, X,
 } from 'lucide-vue-next'
 import MemberPhoto from '../components/MemberPhoto.vue'
 import Modal from '../components/Modal.vue'
@@ -204,9 +269,14 @@ import { fmtDate, money } from '../utils'
 const STEPS = ['Member', 'Books', 'Issued', 'Payment']
 const route = useRoute()
 const step = ref(1)
-const status = ref(null) // the member found, with their books now and what they owe
-const basket = ref([]) // books chosen to issue
-const result = ref(null) // the issue, once saved
+// The members of this visit: usually one, sometimes a family or friends together.
+// Each has their own status (books now, limit, what they owe) and their own books chosen now.
+const members = ref([]) // [{ status, basket: [] }]
+const cur = ref(0) // the member shown / getting the books scanned now
+const status = computed(() => members.value[cur.value]?.status || null)
+const basket = computed(() => members.value[cur.value]?.basket || [])
+const isGroup = computed(() => members.value.length > 1)
+const result = ref(null) // the issue, once saved: { due_date, ref, fee_total, members: [...], loans: [...all] }
 const error = ref('')
 const bookError = ref('')
 const matches = ref([])
@@ -219,20 +289,35 @@ const openedPay = ref(false)
 const askUndo = ref(false)
 
 const unpaid = computed(() => (status.value?.fines || []).reduce((s, l) => s + l.balance, 0))
+const unpaidAll = computed(() => members.value.reduce((t, x) => t + x.status.fines.reduce((s, l) => s + l.balance, 0), 0))
 const blocked = computed(() => !!status.value?.blocks.length)
-// The member step can be left when a member is found, may borrow, and owes nothing
-const canGoBooks = computed(() => !!status.value && !blocked.value)
+const totalBooks = computed(() => members.value.reduce((t, x) => t + x.basket.length, 0))
+const feeTotal = computed(() => members.value.reduce((t, x) => t + x.basket.length * (x.status.issue_fee || 0), 0))
+// The member step can be left when at least one member may borrow
+const canGoBooks = computed(() => members.value.some((x) => !x.status.blocks.length))
 const payDue = computed(() => pay.value?.unpaid || 0)
 const nonLending = computed(() =>
   (appSettings.non_lending_sections || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean))
+const res1 = computed(() => result.value?.members[0])
+const issuedTo = computed(() => {
+  const ms = result.value?.members || []
+  if (ms.length === 1) return `${ms[0].status.member.name} · ${ms[0].status.member.membership_no}`
+  return `${ms.length} members: ${ms.map((m) => m.status.member.name).join(', ')}`
+})
+// Paying together: everyone who got books, and anyone in the visit who still owes from earlier
+const payIds = computed(() => members.value
+  .filter((x) => x.basket.length || x.status.fines.length || result.value?.members.some((m) => m.member_id === x.status.member.id))
+  .map((x) => x.status.member.id))
 const barNote = computed(() => {
+  const n = members.value.length
   if (step.value === 1) {
-    if (!status.value) return 'Scan or find the member'
+    if (!n) return 'Scan or find the member'
+    if (n > 1) return `${n} members · scan another card to add more`
     if (blocked.value) return 'This member cannot borrow now'
     return status.value.member.name
   }
-  const who = `${status.value.member.name} · ${status.value.member.membership_no}`
-  if (step.value === 2) return basket.value.length ? `${who} · ${basket.value.length} book(s) chosen` : `${who} · scan the books`
+  const who = n > 1 ? `${n} members` : `${status.value.member.name} · ${status.value.member.membership_no}`
+  if (step.value === 2) return totalBooks.value ? `${who} · ${totalBooks.value} book(s) chosen` : `${who} · scan the books`
   if (step.value === 3) return `${who} · ${result.value.loans.length} book(s) issued`
   return payDue.value > 0 ? `${who} · everything is paid together` : `${who} · nothing left to pay`
 })
@@ -248,6 +333,7 @@ const daysText = computed(() => {
 // ---- moving between the steps ----
 async function goBooks() {
   if (!canGoBooks.value) return
+  if (blocked.value) cur.value = members.value.findIndex((x) => !x.status.blocks.length)
   step.value = 2
   await nextTick()
   bookScan.value?.focus()
@@ -265,11 +351,11 @@ function goStep(n) {
   if (step.value === 4 && n === 3) {
     step.value = 3
   } else if (step.value >= 3) {
-    // the books are already issued: changing the member or the books means taking that issue back first
+    // the books are already issued: changing the members or the books means taking that issue back first
     undoTo = n
     askUndo.value = true
   } else {
-    step.value = n // the member and the books chosen so far stay as they are
+    step.value = n // the members and the books chosen so far stay as they are
     if (n === 1) nextTick(() => memberScan.value?.focus())
   }
 }
@@ -277,7 +363,8 @@ function goStep(n) {
 async function undoIssue() {
   busy.value = true
   try {
-    status.value = await api.post('/circulation/cancel-issue', { loan_ids: result.value.loans.map((l) => l.id) })
+    await api.post('/circulation/cancel-issue', { loan_ids: result.value.loans.map((l) => l.id) })
+    await refreshAll()
     result.value = null
     openedPay.value = false
     askUndo.value = false
@@ -293,7 +380,7 @@ async function undoIssue() {
   }
 }
 
-// ---- step 1: member ----
+// ---- the members of the visit ----
 async function onMemberScan(code) {
   error.value = ''
   matches.value = []
@@ -309,26 +396,50 @@ async function onMemberScan(code) {
   }
 }
 
+// Add a member to the visit (or, if already in it, choose them)
 async function loadMember(id) {
   matches.value = []
-  status.value = await api.get(`/circulation/member-status/${id}`)
-  // another member chosen with books already in the list: keep only as many as this member can take
-  if (basket.value.length > status.value.can_borrow) {
-    basket.value = basket.value.slice(0, status.value.can_borrow)
-    bookError.value = `This member can take only ${status.value.can_borrow} book(s), so the list was shortened.`
+  const st = await api.get(`/circulation/member-status/${id}`)
+  const at = members.value.findIndex((x) => x.status.member.id === st.member.id)
+  if (at >= 0) {
+    members.value[at].status = st
+    cur.value = at
+  } else {
+    members.value.push({ status: st, basket: [] })
+    cur.value = members.value.length - 1
   }
 }
 
-// ---- step 2: books ----
+function pick(i) {
+  cur.value = i
+  bookError.value = ''
+  choices.value = []
+  if (step.value === 2) nextTick(() => bookScan.value?.focus())
+}
+
+function removeMember(i) {
+  members.value.splice(i, 1)
+  if (cur.value >= members.value.length) cur.value = Math.max(0, members.value.length - 1)
+  if (!members.value.length && step.value === 2) step.value = 1
+}
+
+async function refreshAll() {
+  for (const x of members.value) x.status = await api.get(`/circulation/member-status/${x.status.member.id}`)
+}
+
+// ---- step 2: books (for the member highlighted) ----
 async function onBookScan(code) {
   bookError.value = ''
   choices.value = []
   try {
     const r = await api.get('/circulation/scan', { code, prefer: 'book' })
     if (r.type === 'member') {
-      bookError.value = 'That is a member card. Scan the book now, or press Back to change the member.'
+      // a member card on the Books step: switch to that member (and add them to the visit if new)
+      await loadMember(r.member.id)
+      toast(`Now adding books for ${status.value.member.name}`)
+      bookScan.value?.focus()
     } else if (r.type === 'isbn') {
-      const free = r.books.filter((b) => b.status === 'AVAILABLE' && !basket.value.some((x) => x.id === b.id))
+      const free = r.books.filter((b) => b.status === 'AVAILABLE' && !inBaskets(b))
       if (free.length === 1) addBook(free[0])
       else choices.value = r.books
     } else {
@@ -339,10 +450,14 @@ async function onBookScan(code) {
   }
 }
 
+// the member in this visit who already has this book in their list
+const inBaskets = (b) => members.value.find((x) => x.basket.some((y) => y.id === b.id))
+
 function addBook(b) {
   choices.value = []
-  if (basket.value.some((x) => x.id === b.id)) {
-    bookError.value = `"${b.title}" is already in the list.`
+  const owner = inBaskets(b)
+  if (owner) {
+    bookError.value = `"${b.title}" is already in the list` + (isGroup.value ? ` of ${owner.status.member.name}.` : '.')
   } else if (b.status === 'ISSUED') {
     bookError.value = `"${b.title}" is already issued to ${b.borrower_name} (${b.borrower_no}).`
   } else if (b.status !== 'AVAILABLE') {
@@ -350,7 +465,7 @@ function addBook(b) {
   } else if (nonLending.value.includes((b.section || '').toLowerCase())) {
     bookError.value = `"${b.title}" is a ${b.section} book. It can be read only inside the library.`
   } else if (basket.value.length >= status.value.can_borrow) {
-    bookError.value = `This member can take only ${status.value.can_borrow} more book(s).`
+    bookError.value = `${status.value.member.name} can take only ${status.value.can_borrow} more book(s).`
   } else {
     basket.value.push(b)
   }
@@ -360,10 +475,15 @@ function addBook(b) {
 async function confirmIssue() {
   busy.value = true
   try {
-    result.value = await api.post('/circulation/issue', {
-      member_id: status.value.member.id,
-      acc_nos: basket.value.map((b) => b.acc_no),
-    })
+    // everyone's books at once, under one reference: either all are issued or none
+    const items = members.value.filter((x) => x.basket.length)
+      .map((x) => ({ member_id: x.status.member.id, acc_nos: x.basket.map((b) => b.acc_no) }))
+    const r = await api.post('/circulation/issue-group', { items })
+    for (const m of r.members) {
+      const x = members.value.find((y) => y.status.member.id === m.member_id)
+      if (x) x.status = m.status
+    }
+    result.value = { ...r, loans: r.members.flatMap((m) => m.loans) }
     step.value = 3
     toast('Books issued')
   } catch (e) {
@@ -377,8 +497,8 @@ function reset() {
   step.value = 1
   openedPay.value = false
   askUndo.value = false
-  status.value = null
-  basket.value = []
+  members.value = []
+  cur.value = 0
   result.value = null
   error.value = ''
   bookError.value = ''

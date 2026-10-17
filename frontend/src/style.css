@@ -295,6 +295,12 @@ tr.click:hover .code-tag { border-color: #8a9dd2; background: #fff; }
 .rs-tile small { font-size: 12px; color: var(--ink-soft); }
 .rs-tile strong { font-size: 15px; color: var(--blue-900); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .report-table.rs-lines { min-width: 0; }
+/* group receipt: a heading row and subtotal for each member */
+.rs-lines tr.rs-member td { background: var(--blue-50); color: var(--blue-900); border-top: 1px solid var(--blue-100); }
+.rs-lines tr.rs-member svg { vertical-align: -2px; color: var(--blue-700); }
+.rs-lines td.rs-in { padding-left: 26px; }
+.group-mark { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 1px 8px; border-radius: 20px; font-size: 12px; font-weight: 650;
+  background: var(--blue-50); border: 1px solid var(--blue-200); color: var(--blue-700); vertical-align: 1px; }
 .rs-tiles:has(.rs-tile:nth-child(6)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .text-red { color: var(--red); }
 .rs-lines .total-big { font-size: 18px; }
@@ -1121,3 +1127,33 @@ a.ph-phone:hover { border-color: #8a9dd2; box-shadow: 0 0 0 3px var(--blue-100);
   .table th { background: #fff; }
   .grid-side, .grid-2 { display: block; }
 }
+
+/* Issue book, several members in one visit: a chip per member; books go to the highlighted one */
+.grp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.grp-label { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); margin-right: 2px; }
+.grp-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 8px 6px 11px; border: 1px solid var(--line); border-radius: 10px;
+  background: #fff; font: inherit; font-size: 14px; color: var(--ink); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.grp-chip:hover { border-color: var(--blue-200); }
+.grp-chip svg { color: var(--blue-700); flex-shrink: 0; }
+.grp-chip strong { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+.grp-chip small { font-size: 12px; font-weight: 650; color: var(--blue-700); background: var(--blue-50); border-radius: 6px; padding: 1px 6px; }
+.grp-chip.on { border-color: #8a9dd2; background: var(--blue-50); box-shadow: 0 0 0 3px var(--blue-100); }
+.grp-chip.on small { background: #fff; }
+.grp-chip.bad { border-color: #e2b4b4; }
+.grp-chip.bad small { color: var(--red); background: #fbeeee; }
+.grp-x { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--ink-soft); }
+.grp-x:hover { background: #fbeeee; color: var(--red); }
+.grp-x svg { color: inherit; }
+.grp-tip { margin-left: 4px; }
+.grp-sum { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--blue-50);
+  border: 1px solid var(--blue-100); font-size: 13.5px; color: var(--ink-soft); }
+.grp-sum b { color: var(--blue-900); margin-right: 4px; }
+.idone-h.grp-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.idone-h.grp-h svg { color: var(--blue-700); }
+.idone-h.grp-h small { font-weight: 500; font-size: 13px; }
+
+/* Return book, several members: a heading row for each member's books */
+.ret-table tr.ret-member td { background: var(--blue-50); color: var(--blue-900); border-top: 1px solid var(--blue-100); cursor: default; }
+.ret-table tr.ret-member svg { vertical-align: -2px; color: var(--blue-700); }
+.ret-table tr.ret-member .btn { padding: 3px 8px; }
+.card.ret-add { padding-top: 14px; padding-bottom: 12px; }

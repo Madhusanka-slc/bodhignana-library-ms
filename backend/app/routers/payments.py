@@ -49,24 +49,29 @@ def create_payment(data: PaymentIn, db: Session = Depends(get_db), user: User = 
 
 @router.post("/collect", response_model=list[PaymentOut])
 def collect(data: CollectIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """Pay everything still owed for these books, all on ONE receipt (one line per book inside it)."""
-    m = db.get(Member, data.member_id)
-    if not m:
-        raise HTTPException(404, "Member not found")
+    """Pay everything still owed for these books, all on ONE receipt (one line per book inside it).
+    The books can belong to several members who came together (a group visit): each line is
+    still recorded under the member who owes it, so their own records and reports stay right."""
     loans = [db.get(Loan, i) for i in dict.fromkeys(data.loan_ids)]
-    if any(l is None or l.member_id != m.id for l in loans):
+    if any(l is None for l in loans):
+        raise HTTPException(404, "Some of these charges were not found")
+    if data.member_id is not None and any(l.member_id != data.member_id for l in loans):
         raise HTTPException(400, "These charges do not belong to this member")
     owed = [l for l in loans if l.balance > 0]
     if not owed:
         raise HTTPException(400, "Nothing is owed for these books")
+    owed.sort(key=lambda l: (l.member_id, l.id))  # each member's lines together on the receipt
     receipt = next_receipt_no(db)
     payments = []
     for l in owed:
         parts = ", ".join({"issue_fee": "issue fee", "late": f"late ({l.late_days} day(s))", "damage": "damaged",
                            "lost": "missing"}[p["kind"]] for p in l.due_parts)
-        payments.append(record_payment(db, m, l.balance, loan_payment_type(l), user, loan=l, notes=parts, receipt_no=receipt))
+        payments.append(record_payment(db, l.member, l.balance, loan_payment_type(l), user, loan=l, notes=parts, receipt_no=receipt))
     total = sum(float(p.amount) for p in payments)
-    log_action(db, user, "payment", f"Received Rs. {total:.2f} from {m.name} ({m.membership_no}) for "
+    members = list(dict.fromkeys(l.member for l in owed))
+    who = (f"{members[0].name} ({members[0].membership_no})" if len(members) == 1
+           else f"a group of {len(members)} members ({', '.join(m.membership_no for m in members)})")
+    log_action(db, user, "payment", f"Received Rs. {total:.2f} from {who} for "
                f"{len(payments)} book(s), receipt {receipt}", "payment", payments[0].id, receipt)
     db.commit()
     for p in payments:

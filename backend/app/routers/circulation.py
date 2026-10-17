@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..auth import current_user
 from ..database import get_db
 from ..models import AVAILABLE, DAMAGED, ISSUED, LOST, Book, Loan, Member, User, dec
-from ..schemas import BookOut, CancelIssueIn, ChargeIn, IssueIn, LoanOut, MemberOut, PaymentOut, ReturnIn, ReturnManyIn
+from ..schemas import BookOut, CancelIssueIn, ChargeIn, IssueGroupIn, IssueIn, LoanOut, MemberOut, PaymentOut, ReturnIn, ReturnManyIn
 from ..services import (calc_late, compute_due_date, damage_fine_for, find_book_by_code, find_member_by_code,
                         get_settings, issue_fee_for, loan_payment_type, log_action, lost_fine_for,
                         max_books_for, next_receipt_no, next_txn_ref, non_lending_sections, num,
@@ -85,24 +85,21 @@ def member_status(member_id: int, db: Session = Depends(get_db), _: User = Depen
     return _member_status(m, get_settings(db))
 
 
-@router.post("/issue")
-def issue_books(data: IssueIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    st = get_settings(db)
-    m = db.get(Member, data.member_id)
-    if not m:
-        raise HTTPException(404, "Member not found")
-    acc_nos = list(dict.fromkeys(a.strip() for a in data.acc_nos if a.strip()))
+def _books_to_issue(db: Session, m: Member, acc_nos: list[str], st: dict, taken: set) -> list[Book]:
+    """Check that member m may take these books now, and find them. 'taken' holds the book ids already
+    chosen in this visit (for another member of a group), so one book is not given twice."""
+    acc_nos = list(dict.fromkeys(a.strip() for a in acc_nos if a.strip()))
     if not acc_nos:
         raise HTTPException(400, "Please scan at least one book")
     if not m.is_active:
-        raise HTTPException(400, "This member is not active")
+        raise HTTPException(400, f"{m.name} is not an active member")
     if m.is_expired:
-        raise HTTPException(400, f"Membership expired on {m.expiry_date}. Please renew first.")
+        raise HTTPException(400, f"The membership of {m.name} expired on {m.expiry_date}. Please renew first.")
     # Unpaid charges from earlier (e.g. a late return) do not stop an issue: they are paid on the
     # Payment step together with this issue's fees, on one receipt.
     max_books = max_books_for(m, st)
     if len(m.active_loans) + len(acc_nos) > max_books:
-        raise HTTPException(400, f"This member can have only {max_books} book(s) at a time "
+        raise HTTPException(400, f"{m.name} can have only {max_books} book(s) at a time "
                                  f"(already has {len(m.active_loans)}).")
     blocked_sections = non_lending_sections(st)
     books = []
@@ -110,18 +107,20 @@ def issue_books(data: IssueIn, db: Session = Depends(get_db), user: User = Depen
         b = find_book_by_code(db, acc)
         if not b:
             raise HTTPException(404, f"Book {acc} not found")
+        if b.id in taken:
+            raise HTTPException(400, f"\"{b.title}\" ({b.acc_no}) is chosen twice in this visit")
         if b.status == ISSUED:
             raise HTTPException(400, f"\"{b.title}\" ({b.acc_no}) is already issued to {b.borrower_name}")
         if b.status != AVAILABLE:
             raise HTTPException(400, f"\"{b.title}\" ({b.acc_no}) cannot be issued. Status: {b.status}")
         if b.section.strip().lower() in blocked_sections:
             raise HTTPException(400, f"\"{b.title}\" is a {b.section} book and cannot be taken out")
+        taken.add(b.id)
         books.append(b)
+    return books
 
-    issue_date = data.issue_date or date.today()
-    due = compute_due_date(db, issue_date, st)
-    ref = next_txn_ref(db)       # one reference for everything issued in this visit
-    fee = issue_fee_for(m, st)   # fee per book for this member's type
+
+def _make_loans(db: Session, user: User, m: Member, books: list[Book], issue_date: date, due: date, ref: str, fee) -> list[Loan]:
     loans = []
     for b in books:
         loan = Loan(book=b, member=m, issue_date=issue_date, due_date=due, issued_by=user.display_name,
@@ -133,10 +132,59 @@ def issue_books(data: IssueIn, db: Session = Depends(get_db), user: User = Depen
     for loan in loans:
         log_action(db, user, "issue", f"Issued \"{loan.book.title}\" to {m.name} ({m.membership_no}), due {due}, ref {ref}",
                    "loan", loan.id, loan.book.acc_no)
+    return loans
+
+
+@router.post("/issue")
+def issue_books(data: IssueIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    st = get_settings(db)
+    m = db.get(Member, data.member_id)
+    if not m:
+        raise HTTPException(404, "Member not found")
+    books = _books_to_issue(db, m, data.acc_nos, st, set())
+    issue_date = data.issue_date or date.today()
+    due = compute_due_date(db, issue_date, st)
+    ref = next_txn_ref(db)       # one reference for everything issued in this visit
+    fee = issue_fee_for(m, st)   # fee per book for this member's type
+    loans = _make_loans(db, user, m, books, issue_date, due, ref, fee)
     db.commit()
     db.refresh(m)
     return {"due_date": due, "ref": ref, "fee_per_book": float(fee), "fee_total": float(fee * len(loans)),
             "loans": [LoanOut.model_validate(l) for l in loans], "status": _member_status(m, st)}
+
+
+@router.post("/issue-group")
+def issue_group(data: IssueGroupIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Several members who came together (family, friends): each takes their own books. Every book is
+    recorded under its own member (limits, due dates and fines stay per member); the visit shares one
+    reference number. Everything is checked first, so either all the books are issued or none."""
+    st = get_settings(db)
+    items = [i for i in data.items if i.acc_nos]
+    if not items:
+        raise HTTPException(400, "Please scan at least one book")
+    if len({i.member_id for i in items}) != len(items):
+        raise HTTPException(400, "A member is listed twice")
+    taken: set = set()
+    plan = []
+    for i in items:
+        m = db.get(Member, i.member_id)
+        if not m:
+            raise HTTPException(404, "Member not found")
+        plan.append((m, _books_to_issue(db, m, i.acc_nos, st, taken)))
+    issue_date = data.issue_date or date.today()
+    due = compute_due_date(db, issue_date, st)
+    ref = next_txn_ref(db)  # one reference for the whole visit
+    done = []
+    for m, books in plan:
+        fee = issue_fee_for(m, st)
+        done.append((m, fee, _make_loans(db, user, m, books, issue_date, due, ref, fee)))
+    db.commit()
+    members = []
+    for m, fee, loans in done:
+        db.refresh(m)
+        members.append({"member_id": m.id, "fee_per_book": float(fee), "fee_total": float(fee * len(loans)),
+                        "loans": [LoanOut.model_validate(l) for l in loans], "status": _member_status(m, st)})
+    return {"due_date": due, "ref": ref, "fee_total": sum(x["fee_total"] for x in members), "members": members}
 
 
 @router.post("/cancel-issue")
@@ -148,8 +196,6 @@ def cancel_issue(data: CancelIssueIn, db: Session = Depends(get_db), user: User 
         raise HTTPException(404, "These books are no longer issued. Please start again.")
     member = loans[0].member
     for l in loans:
-        if l.member_id != member.id:
-            raise HTTPException(400, "These books were not issued to the same member")
         if l.return_date is not None:
             raise HTTPException(400, f"\"{l.book.title}\" has already been returned")
         if l.issue_date != date.today():
@@ -158,7 +204,7 @@ def cancel_issue(data: CancelIssueIn, db: Session = Depends(get_db), user: User 
             raise HTTPException(400, "A payment has already been taken for these books, so they cannot be changed here. "
                                      "Use Return book instead.")
     for l in loans:
-        log_action(db, user, "issue", f"Cancelled the issue of \"{l.book.title}\" to {member.name} ({member.membership_no})"
+        log_action(db, user, "issue", f"Cancelled the issue of \"{l.book.title}\" to {l.member.name} ({l.member.membership_no})"
                    + (f", ref {l.ref}" if l.ref else ""), "loan", l.id, l.book.acc_no)
         l.book.status = AVAILABLE
         db.delete(l)
@@ -269,7 +315,8 @@ def return_book(data: ReturnIn, db: Session = Depends(get_db), user: User = Depe
 
 @router.post("/return-many")
 def return_many(data: ReturnManyIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """Return several books in one go. All or nothing: if one book cannot be returned, none are."""
+    """Return several books in one go, also of several members who came together. Each book keeps its own
+    due date and fine; what is paid goes on one receipt. All or nothing: if one book cannot be returned, none are."""
     st = get_settings(db)
     returned = data.return_date or date.today()
     acc_nos = [i.acc_no.strip() for i in data.items if i.acc_no.strip()]
@@ -284,13 +331,17 @@ def return_many(data: ReturnManyIn, db: Session = Depends(get_db), user: User = 
         payment, f = _do_return(db, user, st, loan, returned, damaged, data.notes, data.collect_payment, lost, receipt)
         results.append((loan, payment, f))
     db.commit()
-    member = loans[0][0].member
-    db.refresh(member)
+    # the books may belong to several members who came together (a group visit)
+    members = list(dict.fromkeys(l.member for l, _, _ in loans))
+    for m in members:
+        db.refresh(m)
+    statuses = [_member_status(m, st) for m in members]
     return {
         "items": [{"loan": LoanOut.model_validate(l), "payment": PaymentOut.model_validate(p) if p else None, **f}
                   for l, p, f in results],
         "total": float(sum(f["total"] for _, _, f in results)),
-        "status": _member_status(member, st),
+        "status": statuses[0],
+        "statuses": statuses,
     }
 
 
