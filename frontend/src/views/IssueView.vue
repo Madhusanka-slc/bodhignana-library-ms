@@ -233,7 +233,7 @@ const barNote = computed(() => {
   }
   const who = `${status.value.member.name} · ${status.value.member.membership_no}`
   if (step.value === 2) return basket.value.length ? `${who} · ${basket.value.length} book(s) chosen` : `${who} · scan the books`
-  if (step.value === 3) return `${who} · ${result.loans.length} book(s) issued`
+  if (step.value === 3) return `${who} · ${result.value.loans.length} book(s) issued`
   return payDue.value > 0 ? `${who} · everything is paid together` : `${who} · nothing left to pay`
 })
 
