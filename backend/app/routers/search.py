@@ -6,7 +6,7 @@ from ..auth import current_user
 from ..database import get_db
 from ..models import Book, Member
 from ..schemas import BookOut, MemberOut
-from ..services import book_search_filter, member_search_filter
+from ..services import book_search_filter, copy_counts, member_search_filter
 
 router = APIRouter(prefix="/api/search", tags=["search"], dependencies=[Depends(current_user)])
 
@@ -29,6 +29,6 @@ def search(q: str = "", section: str = "", include_members: bool = True, db: Ses
     if include_members and q:
         members = db.query(Member).filter(member_search_filter(q)).order_by((func.lower(Member.membership_no) == q.lower()).desc(), Member.name).limit(30).all()
     return {
-        "books": [BookOut.model_validate(b) for b in books],
+        "books": [BookOut.model_validate(b) for b in copy_counts(db, books)],
         "members": [MemberOut.model_validate(m) for m in members],
     }

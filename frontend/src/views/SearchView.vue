@@ -41,26 +41,33 @@
       </div>
     </div>
 
+    <!-- One result per book: copies of the same book together, with how many are in the library -->
     <div v-if="books.length" class="card">
       <div class="card-head">
-        <h2>Books ({{ books.length }})</h2>
-        <span class="badge green">{{ availableCount }} in the library now</span>
+        <h2>Books ({{ titles.length }})</h2>
+        <span class="badge green">{{ titles.filter((t) => t.inLib).length }} with a copy in the library now</span>
       </div>
-      <div v-for="b in books" :key="b.id" class="result">
+      <div v-for="t in titles" :key="t.key" class="result">
         <div class="result-book">
-          <router-link :to="'/books/' + b.id" tabindex="-1"><BookCover :src="b.cover_url" :title="b.title" size="sm" /></router-link>
+          <router-link :to="'/books/' + t.b.id" tabindex="-1"><BookCover :src="t.b.cover_url" :title="t.b.title" size="sm" /></router-link>
           <div>
-          <h3><router-link :to="'/books/' + b.id">{{ b.title }}</router-link></h3>
-          <div v-if="b.sinhala_title || b.tamil_title" class="meta">{{ [b.sinhala_title, b.tamil_title].filter(Boolean).join(' / ') }}</div>
+          <h3><router-link :to="'/books/' + t.b.id">{{ t.b.title }}</router-link></h3>
+          <div v-if="t.b.sinhala_title || t.b.tamil_title" class="meta">{{ [t.b.sinhala_title, t.b.tamil_title].filter(Boolean).join(' / ') }}</div>
           <div class="meta">
-            {{ b.persons || 'Unknown author' }}<span v-if="b.year_of_publication"> · {{ b.year_of_publication }}</span>
+            {{ t.b.persons || 'Unknown author' }}<span v-if="t.b.year_of_publication"> · {{ t.b.year_of_publication }}</span>
+            · {{ t.b.section || 'No section' }}<span v-if="t.b.call_no"> · Call No. {{ t.b.call_no }}</span>
           </div>
-          <div class="meta">Acc. No. <strong>{{ b.acc_no }}</strong> · {{ b.section || 'No section' }}<span v-if="b.call_no"> · Call No. {{ b.call_no }}</span></div>
+          <div class="meta copy-accs">
+            <span class="copy-n">{{ t.total }} cop{{ t.total === 1 ? 'y' : 'ies' }}:</span>
+            <router-link v-for="c in t.list.slice(0, 8)" :key="c.id" :to="'/books/' + c.id" class="acc-chip" :class="accCls(c)"
+                         :title="c.status === 'ISSUED' ? `With ${c.borrower_name}, due ${fmtDate(c.due_date)}` : statusText(c)">{{ c.acc_no }}</router-link>
+            <span v-if="t.list.length > 8" class="muted">+{{ t.list.length - 8 }}</span>
+          </div>
           </div>
         </div>
-        <div class="where" :class="where(b).cls">
-          <strong>{{ where(b).title }}</strong>
-          <span>{{ where(b).text }}</span>
+        <div class="where" :class="where(t).cls">
+          <strong>{{ where(t).title }}</strong>
+          <span>{{ where(t).text }}</span>
         </div>
       </div>
     </div>
@@ -84,7 +91,22 @@ const members = ref([])
 const searched = ref(false)
 const error = ref('')
 
-const availableCount = computed(() => books.value.filter((b) => b.status === 'AVAILABLE').length)
+// Copies of the same book together: one result per book
+const titles = computed(() => {
+  const by = new Map()
+  for (const b of books.value) {
+    const k = b.title_id || b.id
+    if (!by.has(k)) by.set(k, { key: k, b, list: [] })
+    by.get(k).list.push(b)
+  }
+  return [...by.values()].map((t) => {
+    // the copy shown first: one in the library if there is one
+    const first = t.list.find((c) => c.status === 'AVAILABLE') || t.list[0]
+    return { ...t, b: first, total: Math.max(first.copies || 0, t.list.length), inLib: first.copies_in || t.list.filter((c) => c.status === 'AVAILABLE').length }
+  })
+})
+const accCls = (c) => (c.status === 'AVAILABLE' ? 'in' : c.status === 'ISSUED' ? 'out' : 'off')
+const statusText = (c) => (c.status === 'AVAILABLE' ? `In the library${c.location ? ', ' + c.location : ''}` : `Marked as ${c.status.toLowerCase()}`)
 
 const fetchResults = latestOnly((params) => api.get('/search', params))
 // Results update while typing (a moment after the last key); Enter or a scanned code searches at once.
@@ -119,18 +141,29 @@ function setSection(s) {
   if (q.value || s) run()
 }
 
-function where(b) {
-  if (b.status === 'AVAILABLE') {
-    return { cls: 'green', title: 'In the library', text: b.location ? `Look in ${b.location}${b.section ? ' (' + b.section + ')' : ''}` : `Section: ${b.section || 'not set'}` }
-  }
-  if (b.status === 'ISSUED') {
-    const overdue = b.due_date && new Date(b.due_date + 'T23:59:59') < new Date()
+// Can the member get this book now? Where is a free copy, or when is the first one back?
+function where(t) {
+  const free = t.list.filter((c) => c.status === 'AVAILABLE')
+  const out = t.list.filter((c) => c.status === 'ISSUED').sort((x, y) => (x.due_date < y.due_date ? -1 : 1))
+  if (t.inLib > 0) {
+    const c = free[0]
+    const place = c?.location ? `Look in ${c.location}${c.section ? ' (' + c.section + ')' : ''}` : `Section: ${c?.section || t.b.section || 'not set'}`
     return {
-      cls: 'orange',
-      title: overdue ? `Overdue since ${fmtDate(b.due_date)}` : `You can get it after ${fmtDate(b.due_date)}`,
-      text: `Now with ${b.borrower_name} (${b.borrower_no}), borrowed ${fmtDate(b.date_borrowed)}`,
+      cls: 'green',
+      title: t.total === 1 ? 'In the library' : `${t.inLib} of ${t.total} copies in the library`,
+      text: free.length ? `${place} · Acc. ${free.slice(0, 4).map((x) => x.acc_no).join(', ')}` : place,
     }
   }
-  return { cls: 'gray', title: 'Not available', text: `Marked as ${b.status.toLowerCase()}` }
+  if (out.length) {
+    const c = out[0]
+    const overdue = c.due_date && new Date(c.due_date + 'T23:59:59') < new Date()
+    return {
+      cls: 'orange',
+      title: t.total === 1 ? (overdue ? `Overdue since ${fmtDate(c.due_date)}` : `You can get it after ${fmtDate(c.due_date)}`)
+        : `All ${t.total} copies are out · first back ${fmtDate(c.due_date)}`,
+      text: `Acc. ${c.acc_no} is with ${c.borrower_name} (${c.borrower_no})${overdue ? ', overdue' : ''}`,
+    }
+  }
+  return { cls: 'gray', title: 'Not available', text: t.list.map((c) => `${c.acc_no}: ${c.status.toLowerCase()}`).join(' · ') }
 }
 </script>

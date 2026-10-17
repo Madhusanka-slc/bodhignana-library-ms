@@ -89,7 +89,7 @@
       <p v-if="blocked" class="alert red">{{ status.member.name }} cannot borrow now: {{ status.blocks.join(' ') }}</p>
 
       <div v-if="choices.length" class="mt">
-        <p class="muted">Several copies. Pick the one in hand:</p>
+        <p class="muted">{{ choicesNote || 'Several copies. Pick the one in hand:' }}</p>
         <button v-for="b in choices" :key="b.id" class="pick" :disabled="b.status !== 'AVAILABLE'" @click="addBook(b)">
           <span><strong>{{ b.acc_no }}</strong> · {{ b.title }}</span>
           <StatusBadge :status="b.status" />
@@ -431,6 +431,7 @@ async function refreshAll() {
 async function onBookScan(code) {
   bookError.value = ''
   choices.value = []
+  choicesNote.value = ''
   try {
     const r = await api.get('/circulation/scan', { code, prefer: 'book' })
     if (r.type === 'member') {
@@ -455,13 +456,16 @@ const inBaskets = (b) => members.value.find((x) => x.basket.some((y) => y.id ===
 
 function addBook(b) {
   choices.value = []
+  choicesNote.value = ''
   const owner = inBaskets(b)
   if (owner) {
     bookError.value = `"${b.title}" is already in the list` + (isGroup.value ? ` of ${owner.status.member.name}.` : '.')
   } else if (b.status === 'ISSUED') {
-    bookError.value = `"${b.title}" is already issued to ${b.borrower_name} (${b.borrower_no}).`
+    bookError.value = `"${b.title}" (Acc. ${b.acc_no}) is already issued to ${b.borrower_name} (${b.borrower_no}).`
+    otherCopies(b)
   } else if (b.status !== 'AVAILABLE') {
-    bookError.value = `"${b.title}" cannot be issued. It is marked as ${b.status.toLowerCase()}.`
+    bookError.value = `"${b.title}" (Acc. ${b.acc_no}) cannot be issued. It is marked as ${b.status.toLowerCase()}.`
+    otherCopies(b)
   } else if (nonLending.value.includes((b.section || '').toLowerCase())) {
     bookError.value = `"${b.title}" is a ${b.section} book. It can be read only inside the library.`
   } else if (basket.value.length >= status.value.can_borrow) {
@@ -470,6 +474,19 @@ function addBook(b) {
     basket.value.push(b)
   }
   bookScan.value?.focus()
+}
+
+// The copy picked is not free: show the other copies of the same book that are in the library
+const choicesNote = ref('')
+async function otherCopies(b) {
+  try {
+    const r = await api.get(`/books/${b.id}/copies`)
+    const free = r.items.filter((c) => c.status === 'AVAILABLE' && !inBaskets(c))
+    if (free.length) {
+      choicesNote.value = `Another copy of this book is in the library (${free.length} of ${r.total}). Pick the one in hand:`
+      choices.value = free
+    }
+  } catch { /* no other copies */ }
 }
 
 async function confirmIssue() {

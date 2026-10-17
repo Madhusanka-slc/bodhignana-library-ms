@@ -29,6 +29,8 @@ def dashboard(db: Session = Depends(get_db)):
         "members_total": db.query(Member).count(),
         "members_active": db.query(Member).filter(Member.is_active.is_(True)).count(),
         "books_total": db.query(Book).filter(Book.withdrawn.is_(False)).count(),
+        # different books (copies of the same book counted once)
+        "titles_total": db.query(func.count(func.distinct(func.coalesce(Book.title_id, Book.id)))).filter(Book.withdrawn.is_(False)).scalar() or 0,
         "books_available": db.query(Book).filter(Book.status == AVAILABLE).count(),
         "books_issued": db.query(Book).filter(Book.status == ISSUED).count(),
         "overdue": active_loans.filter(Loan.due_date < today).count(),
@@ -354,6 +356,18 @@ def book_summary(group_by: str = "section", section: str = "", db: Session = Dep
         d["total"] += n
         d["value"] += float(value)
         d[{AVAILABLE: "available", ISSUED: "issued"}.get(status, "other")] += n
+    # different books (titles) in each group: copies of the same book counted once
+    tq = db.query(key, func.count(func.distinct(func.coalesce(Book.title_id, Book.id))))
+    if section:
+        tq = tq.filter(Book.section == section)
+    for k, n in tq.group_by(key).all():
+        if group_by == "subject":
+            label = DEWEY.get(k or "", NOT_RECORDED if not k else "Other")
+        elif group_by == "year_entered":
+            label = str(int(k)) if k else NOT_RECORDED
+        else:
+            label = k or NOT_RECORDED
+        data[label]["titles"] = data[label].get("titles", 0) + n
     rows = [{"group": k, **v} for k, v in sorted(data.items(), key=lambda x: (x[0] == NOT_RECORDED, x[0]))]
     return {"count": len(rows), "items": rows, "total": sum(r["total"] for r in rows)}
 

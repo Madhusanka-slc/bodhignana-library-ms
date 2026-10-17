@@ -27,6 +27,8 @@
           <span class="v">{{ n(s.overdue) }}</span><span class="l">Overdue</span>
         </router-link>
         <div class="status-box tint-4"><Users :size="20" /><span class="v">{{ n(s.members_active) }}</span><span class="l">Active members</span></div>
+        <div class="status-box tint-4" :title="`${n(s.books_total)} books (copies), ${n(s.titles_total)} different books`"><Library :size="20" />
+          <span class="v">{{ n(s.titles_total) }}</span><span class="l">Different books · {{ n(s.books_total) }} copies</span></div>
       </div>
     </template>
 
@@ -109,7 +111,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  ArrowDownLeft, ArrowUpRight, BookOpen, BookPlus, CircleAlert, CircleCheck, Clock, Printer, Search, UserPlus, UserRound, Users, Wallet,
+  ArrowDownLeft, ArrowUpRight, BookOpen, BookPlus, CircleAlert, CircleCheck, Clock, Library, Printer, Search, UserPlus, UserRound, Users, Wallet,
 } from 'lucide-vue-next'
 import { api } from '../api'
 import { auth } from '../store'

@@ -11,6 +11,20 @@
       </div>
     </div>
 
+    <!-- A new book that the library already has: add copies instead of typing it all again -->
+    <div v-if="matches.length && !saved" class="card match-box">
+      <Library :size="22" />
+      <div class="match-text">
+        <strong>Already in the library?</strong>
+        <div v-for="m in matches" :key="m.id" class="match-row">
+          <span><b>{{ m.title }}</b><span class="muted"> · {{ m.persons || 'no author' }}<template v-if="m.isbn"> · ISBN {{ m.isbn }}</template></span>
+            <span class="badge" :class="m.copies_in ? 'green' : 'gray'">{{ m.copies }} cop{{ m.copies === 1 ? 'y' : 'ies' }} · {{ m.copies_in }} in library</span></span>
+          <router-link :to="`/books/${m.id}?add=1`" class="btn sm primary"><Copy :size="15" /> Add copies of this book</router-link>
+        </div>
+        <small class="muted">If it is a different book, just carry on.</small>
+      </div>
+    </div>
+
     <!-- Steps, like Issue book; click a step to go to it -->
     <div class="steps">
       <button v-for="(st, i) in STEPS" :key="st" type="button" class="step" :class="{ on: step === i && !saved, done: saved || i < step }"
@@ -115,10 +129,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  BookOpen, BookPlus, Check, ChevronLeft, ChevronRight, Copy, Pencil, Printer, Save,
+  BookOpen, BookPlus, Check, ChevronLeft, ChevronRight, Copy, Library, Pencil, Printer, Save,
 } from 'lucide-vue-next'
 import BookCover from '../components/BookCover.vue'
 import FormGrid from '../components/FormGrid.vue'
@@ -200,6 +214,20 @@ function blank() {
 }
 const b = reactive(blank())
 
+// While a NEW book is typed: is it already in the library? Then copies can be added instead.
+const matches = ref([])
+let matchTimer = null
+watch(() => [b.title, b.isbn, b.persons], () => {
+  if (isEdit.value || copyOf) return
+  clearTimeout(matchTimer)
+  matchTimer = setTimeout(async () => {
+    if ((b.title || '').trim().length < 3 && (b.isbn || '').replace(/[^0-9Xx]/g, '').length < 10) { matches.value = []; return }
+    try {
+      matches.value = await api.get('/books/title-match', { isbn: b.isbn || '', title: b.title || '', persons: b.persons || '' })
+    } catch { matches.value = [] }
+  }, 500)
+})
+
 function fill(src) {
   allKeys.forEach((k) => { b[k] = src[k] ?? '' })
 }
@@ -275,7 +303,9 @@ async function save() {
   }
   busy.value = true
   try {
-    const result = isEdit.value ? await api.put(`/books/${route.params.id}`, b) : await api.post('/books', b)
+    // "Add another copy": linked to that book, so the copies are counted together
+    const result = isEdit.value ? await api.put(`/books/${route.params.id}`, b)
+      : await api.post('/books' + (copyOf ? '?copy_of=' + copyOf : ''), b)
     await saveCover(result.id)
     toast(`Book saved. Acc. No. ${result.acc_no}`)
     if (isEdit.value) router.push('/books/' + result.id)

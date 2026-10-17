@@ -8,11 +8,13 @@
         <div class="ph-line">
           <span class="ph-no"><small>Acc. No.</small><strong>{{ b.acc_no }}</strong></span>
           <span class="ph-no"><small>Call No.</small><strong :class="{ none: !b.call_no }">{{ b.call_no || '-' }}</strong></span>
+          <button type="button" class="ph-no ph-copies" title="See all copies of this book" @click="tab = 'copies'">
+            <small>Copies</small><strong>{{ b.copies || 1 }} · {{ b.copies_in }} in library</strong></button>
         </div>
         <div class="ph-actions">
           <router-link :to="`/books/${b.id}/edit`" class="btn sm"><Pencil :size="15" /> Edit details</router-link>
           <router-link :to="`/books/${b.id}/edit`" class="btn sm"><ImagePlus :size="15" /> {{ b.cover_url ? 'Change cover' : 'Add cover' }}</router-link>
-          <router-link :to="`/books/new?copy=${b.id}`" class="btn sm"><Copy :size="15" /> Add another copy</router-link>
+          <button class="btn sm" @click="openAdd"><Copy :size="15" /> Add copies</button>
           <button class="btn sm" @click="openPrint('/print/book-labels?ids=' + b.id)"><Printer :size="15" /> Print label</button>
         </div>
       </div>
@@ -91,6 +93,39 @@
           </div>
         </template>
 
+        <!-- Copies of this book: how many, which are in the library, who has the others -->
+        <template v-else-if="tab === 'copies'">
+          <div v-if="!cp" class="empty">Loading the copies…</div>
+          <template v-else>
+            <div class="copy-tiles">
+              <div class="copy-tile"><Library :size="20" /><span><small>Copies</small><strong>{{ cp.total }}</strong></span></div>
+              <div class="copy-tile st-green"><CircleCheck :size="20" /><span><small>In the library</small><strong>{{ cp.in_library }}</strong></span></div>
+              <div class="copy-tile st-orange"><Clock :size="20" /><span><small>With members</small><strong>{{ cp.with_members }}</strong></span></div>
+              <div class="copy-tile" :class="{ 'st-red': cp.damaged + cp.lost }"><CircleAlert :size="20" /><span><small>Damaged / lost</small><strong>{{ cp.damaged + cp.lost }}</strong></span></div>
+            </div>
+            <table class="table report-table copy-list">
+              <colgroup><col style="width: 110px" /><col style="width: 140px" /><col /><col style="width: 120px" /><col style="width: 90px" /><col style="width: 110px" /></colgroup>
+              <thead><tr><th>Acc. No.</th><th>Status</th><th>Where / who has it</th><th>Due back</th><th>Year</th><th class="num">Price</th></tr></thead>
+              <tbody>
+                <tr v-for="c in cp.items" :key="c.id" class="click" :class="{ me: c.id === b.id }" @click="c.id !== b.id && $router.push('/books/' + c.id)">
+                  <td><span class="code-tag">{{ c.acc_no }}</span><small v-if="c.id === b.id" class="muted"> this</small></td>
+                  <td><StatusBadge :status="c.status" /></td>
+                  <td :title="c.status === 'ISSUED' ? c.borrower_name : c.location">{{ c.status === 'ISSUED' ? `${c.borrower_name} (${c.borrower_no})` : c.status === 'AVAILABLE' ? (c.location || c.section || 'Shelf not set') : '-' }}</td>
+                  <td><span v-if="c.due_date" :class="{ 'badge red': c.due_date < today }">{{ fmtDate(c.due_date) }}</span><span v-else>-</span></td>
+                  <td>{{ c.year_of_publication || '-' }}</td>
+                  <td class="num">{{ c.price ? money(c.price) : '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="copy-actions">
+              <button class="btn primary" @click="openAdd"><Copy :size="16" /> Add copies</button>
+              <button class="btn" @click="sameCode = ''; askSame = true"><Link2 :size="16" /> Same book as…</button>
+              <button v-if="cp.total > 1 || cp.items.length > 1" class="btn" @click="askSeparate = true"><Unlink :size="16" /> Separate this copy</button>
+              <span class="muted small">Copies are linked by ISBN and title. Correct a wrong link here.</span>
+            </div>
+          </template>
+        </template>
+
         <!-- Borrowing history -->
         <template v-else-if="tab === 'history'">
           <div v-if="!loans.length" class="empty">This book has not been borrowed yet.</div>
@@ -151,6 +186,52 @@
       </div>
     </Modal>
 
+    <!-- More copies of this book: only what can differ is asked -->
+    <Modal v-if="adding" :title="added ? 'Copies added' : 'Add copies of this book'" @close="adding = false">
+      <template v-if="!added">
+        <p class="muted" style="margin-top: 0">{{ b.title }}<template v-if="b.persons"> · {{ b.persons }}</template>. All the details are taken from this book.</p>
+        <div class="form-grid">
+          <div class="field"><label>How many copies</label><input v-model.number="add.count" type="number" min="1" max="200" :disabled="!!add.accs.trim()" /></div>
+          <div class="field"><label>Acc. Nos (optional)</label><input v-model="add.accs" placeholder="Empty = next numbers. Or: 1201, 1202" /></div>
+          <div class="field"><label>Year of publication</label><input v-model="add.year_of_publication" /></div>
+          <div class="field"><label>Edition</label><input v-model="add.edition" /></div>
+          <div class="field"><label>Price (Rs.)</label><input v-model.number="add.price" type="number" min="0" /></div>
+          <div class="field"><label>Rack / shelf</label><div class="two"><input v-model="add.rack_no" placeholder="Rack" /><input v-model="add.shelf_no" placeholder="Shelf" /></div></div>
+        </div>
+      </template>
+      <template v-else>
+        <p style="margin-top: 0"><strong>{{ added.added.length }}</strong> cop{{ added.added.length === 1 ? 'y' : 'ies' }} added. This book now has <strong>{{ added.copies }}</strong> copies.</p>
+        <div class="copy-new"><span v-for="c in added.added" :key="c.id" class="code-tag">{{ c.acc_no }}</span></div>
+      </template>
+      <template #footer>
+        <template v-if="!added">
+          <button class="btn" @click="adding = false">Cancel</button>
+          <button class="btn primary" :disabled="busy || !(addCount > 0)" @click="saveCopies"><Copy :size="16" /> Add {{ addCount }} cop{{ addCount === 1 ? 'y' : 'ies' }}</button>
+        </template>
+        <template v-else>
+          <button class="btn" @click="adding = false">Close</button>
+          <button class="btn primary" @click="openPrint('/print/book-labels?ids=' + added.added.map((c) => c.id).join(','))"><Printer :size="16" /> Print their labels</button>
+        </template>
+      </template>
+    </Modal>
+
+    <!-- Correct a link: this book is the same as another one -->
+    <Modal v-if="askSame" title="Same book as…" @close="askSame = false">
+      <p class="muted" style="margin-top: 0">Type the Acc. No. of a copy of the other book. All copies of both will count as one book.</p>
+      <div class="field"><label>Acc. No. of the other book</label><input v-model="sameCode" @keyup.enter="saveSame" /></div>
+      <template #footer>
+        <button class="btn" @click="askSame = false">Cancel</button>
+        <button class="btn primary" :disabled="busy || !sameCode.trim()" @click="saveSame"><Link2 :size="16" /> Link as the same book</button>
+      </template>
+    </Modal>
+    <Modal v-if="askSeparate" title="Separate this copy?" @close="askSeparate = false">
+      <p style="margin: 0">{{ b.acc_no }} will count as a different book from the other copies it is linked to now.</p>
+      <template #footer>
+        <button class="btn" @click="askSeparate = false">Cancel</button>
+        <button class="btn primary" :disabled="busy" @click="saveSeparate"><Unlink :size="16" /> Separate</button>
+      </template>
+    </Modal>
+
     <!-- Change status, with an optional reason -->
     <Modal v-if="newStatus" :title="`Mark as ${statusLabel(newStatus).toLowerCase()}?`" @close="newStatus = ''">
       <div class="field">
@@ -170,14 +251,15 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Barcode, BookCopy, BookOpen, Building2, CalendarClock, CalendarPlus, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, CircleDashed, CircleMinus, Clock, Coins, Copy, FileText, Globe, Hash, History,
-  ImagePlus, Languages, Layers, Library, ListChecks, MapPin, Maximize2, NotebookPen, Pencil, Printer, QrCode, Tag, User, UserPen, UserRound,
+  ImagePlus, Languages, Layers, Library, Link2, ListChecks, MapPin, Maximize2, NotebookPen, Pencil, Printer, QrCode, Tag, Unlink, User, UserPen, UserRound,
 } from 'lucide-vue-next'
 import BookCover from '../components/BookCover.vue'
 import Modal from '../components/Modal.vue'
+import StatusBadge from '../components/StatusBadge.vue'
 import { api, barcodeUrl, qrUrl } from '../api'
 import { toast } from '../store'
 import { BOOK_STATUS, statusLabel } from '../constants'
-import { fmtDate, money, openPrint } from '../utils'
+import { fmtDate, isoDate, money, openPrint } from '../utils'
 
 const route = useRoute()
 const b = ref(null)
@@ -291,6 +373,7 @@ const whereTiles = computed(() => {
 const tabs = computed(() => [
   { key: 'details', label: 'Details', icon: ListChecks },
   { key: 'where', label: 'Where is it', icon: MapPin },
+  { key: 'copies', label: 'Copies', count: b.value?.copies || 1 },
   { key: 'history', label: 'Borrowing history', count: loans.value.length },
   { key: 'label', label: 'QR label', icon: QrCode },
 ])
@@ -299,6 +382,69 @@ async function load() {
   const r = await api.get(`/books/${route.params.id}`)
   b.value = r.book
   loans.value = r.loans
+  loadCopies()
+}
+
+// ---------- Copies of this book ----------
+const cp = ref(null) // { total, in_library, with_members, damaged, lost, items }
+const today = isoDate()
+async function loadCopies() {
+  cp.value = await api.get(`/books/${b.value.id}/copies`)
+  b.value.copies = cp.value.total
+  b.value.copies_in = cp.value.in_library
+}
+const adding = ref(false)
+const added = ref(null) // the copies just added
+const add = ref({})
+const accList = computed(() => (add.value.accs || '').split(/[,\s]+/).map((x) => x.trim()).filter(Boolean))
+const addCount = computed(() => accList.value.length || Number(add.value.count) || 0)
+function openAdd() {
+  const x = b.value
+  add.value = { count: 1, accs: '', year_of_publication: x.year_of_publication, edition: x.edition, price: Number(x.price) || 0, rack_no: x.rack_no, shelf_no: x.shelf_no }
+  added.value = null
+  adding.value = true
+}
+async function saveCopies() {
+  busy.value = true
+  try {
+    const { accs, ...rest } = add.value
+    added.value = await api.post(`/books/${b.value.id}/add-copies`, { ...rest, count: addCount.value, acc_nos: accList.value })
+    toast(`${added.value.added.length} copies added`)
+    await loadCopies()
+  } catch (e) {
+    toast(e.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+const askSame = ref(false)
+const sameCode = ref('')
+const askSeparate = ref(false)
+async function saveSame() {
+  busy.value = true
+  try {
+    await api.post(`/books/${b.value.id}/same-as`, { code: sameCode.value })
+    askSame.value = false
+    toast('Linked as the same book')
+    await loadCopies()
+  } catch (e) {
+    toast(e.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+async function saveSeparate() {
+  busy.value = true
+  try {
+    await api.post(`/books/${b.value.id}/separate`)
+    askSeparate.value = false
+    toast('This copy is now a book of its own')
+    await loadCopies()
+  } catch (e) {
+    toast(e.message, 'error')
+  } finally {
+    busy.value = false
+  }
 }
 
 async function setLabel(done) {
@@ -328,5 +474,9 @@ async function saveStatus() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  // opened from New book ("Add copies of this book")
+  if (route.query.add) openAdd()
+})
 </script>

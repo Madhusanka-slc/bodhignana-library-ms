@@ -66,7 +66,7 @@
             <tr v-for="b in items" :key="b.id" class="click" @click="$router.push('/books/' + b.id)">
               <td @click.stop><input v-model="selected" type="checkbox" :value="b.id" /></td>
               <td><span class="code-tag">{{ b.acc_no }}</span></td>
-              <td :title="b.title">{{ b.title }}</td>
+              <td :title="b.title">{{ b.title }}<small v-if="b.copies > 1" class="copies-n" :title="`${b.copies} copies of this book, ${b.copies_in} in the library`"> · {{ b.copies }} copies</small></td>
               <td :title="b.persons">{{ b.persons || '-' }}</td>
               <td>{{ b.section || '-' }}</td>
               <td>{{ b.location || '-' }}</td>

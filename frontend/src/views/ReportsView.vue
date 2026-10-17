@@ -313,7 +313,7 @@ const REPORTS = [
         { value: 'year_entered', label: 'Year entered' }, { value: 'year_published', label: 'Year published' }]) },
       P.section,
     ],
-    columns: [col('group', 'Group'), col('total', 'Total', null, true), col('available', 'In library', null, true),
+    columns: [col('group', 'Group'), col('titles', 'Different books', null, true), col('total', 'Copies', null, true), col('available', 'In library', null, true),
       col('issued', 'With members', null, true), col('other', 'Damaged / lost', null, true), col('value', 'Value', 'money')] },
   { group: 'books', key: 'popular', title: 'Most borrowed books', url: '/reports/popular-books',
     desc: 'Books borrowed most often in a period.', unit: 'book(s)',

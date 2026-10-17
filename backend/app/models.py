@@ -107,6 +107,9 @@ class Book(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     acc_no: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    # Copies of the same book share this number (the id of its first copy): used to count copies
+    # and find a free one. Each copy keeps all its own details; this only links them.
+    title_id: Mapped[Optional[int]] = mapped_column(Integer, index=True, nullable=True)
     title: Mapped[str] = txt()
     sinhala_title: Mapped[str] = txt()
     tamil_title: Mapped[str] = txt()

@@ -1,10 +1,11 @@
 """Business rules: settings, due dates, fines, numbering."""
+import re
 from datetime import date, timedelta
 from typing import Optional
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, text
+from sqlalchemy import case, func, or_, text
 from sqlalchemy.orm import Session
 
 from .models import AppSetting, AuditLog, Book, Holiday, Member, Payment, User, dec
@@ -290,3 +291,103 @@ def find_book_by_code(db: Session, code: str):
         db.query(Book).filter(func.upper(Book.acc_no) == code.upper()).first()
         or db.query(Book).filter(Book.item_identifier == code).first()
     )
+
+
+# ---------- Copies of the same book ----------
+# Every physical copy is its own book record (own Acc. No., status, borrower). Copies of the same book
+# share books.title_id, so the library can count them and find a free one.
+_WORD = re.compile(r"\w+")
+
+
+def _words(s: str) -> str:
+    """The words of a title or name, lower case, in sorted order: "Yanthra vidyawa : Bauthika vidyawa"
+    and "Bauthika vidyawa - Yanthra vidyawa" give the same words."""
+    return " ".join(sorted(set(_WORD.findall((s or "").lower()))))
+
+
+def clean_isbn(s: str) -> str:
+    x = re.sub(r"[^0-9X]", "", (s or "").upper())
+    return x if len(x) in (10, 13) else ""
+
+
+def title_keys(isbn: str, title: str, persons: str) -> list[str]:
+    """Keys under which two copies count as the same book:
+    - same ISBN and the same title words (a series ISBN shared by different books stays apart)
+    - same title words and same author (also for books without an ISBN). Without an author this is used
+      only when there is no ISBN, so different volumes with the same title but their own ISBNs stay apart."""
+    t, a, i = _words(title), _words(persons), clean_isbn(isbn)
+    if not t:
+        return []
+    keys = [f"i:{i}|{t}"] if i else []
+    if not i or a:
+        keys.append(f"t:{t}|{a}")
+    return keys
+
+
+def group_titles(db: Session) -> int:
+    """Link all copies of the same book (run once, when copies were first introduced).
+    Returns the number of books (titles) found."""
+    rows = db.execute(text("SELECT id, isbn, title, persons FROM books ORDER BY id")).all()
+    parent = {r.id: r.id for r in rows}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    first = {}  # key -> first book id with it
+    for r in rows:
+        for k in title_keys(r.isbn, r.title, r.persons):
+            if k in first:
+                a, b = find(first[k]), find(r.id)
+                if a != b:
+                    parent[max(a, b)] = min(a, b)
+            else:
+                first[k] = r.id
+    pairs = [{"t": find(r.id), "i": r.id} for r in rows]
+    for n in range(0, len(pairs), 5000):
+        db.execute(text("UPDATE books SET title_id = :t WHERE id = :i"), pairs[n:n + 5000])
+    db.commit()
+    return len({p["t"] for p in pairs})
+
+
+def match_title(db: Session, isbn: str, title: str, persons: str, exclude_id: int = 0) -> list[Book]:
+    """Books already in the library that look like the same book (for a new book being entered).
+    One copy per book (title), the first one."""
+    # Same ISBN, or the same title words (in any order). The author is not required: it may not be typed yet.
+    t, a, i = _words(title), _words(persons), clean_isbn(isbn)
+    if not t and not i:
+        return []
+    conds = []
+    if (title or "").strip():
+        conds.append(func.lower(func.trim(Book.title)) == title.strip().lower())
+    if i:
+        conds.append(func.upper(func.replace(func.replace(Book.isbn, "-", ""), " ", "")) == i)
+    found = {}
+    for b in db.query(Book).filter(or_(*conds), Book.id != exclude_id).order_by(Book.id).limit(500):
+        same_isbn = i and clean_isbn(b.isbn) == i
+        same_title = t and _words(b.title) == t
+        if same_isbn or same_title:
+            found.setdefault(b.title_id or b.id, b)
+    # the same author first (spellings differ, so a different author still shows: staff decide)
+    return sorted(found.values(), key=lambda b: (bool(a) and _words(b.persons) != a, b.id))[:5]
+
+
+def copy_counts(db: Session, books: list) -> list:
+    """Add copies / copies_in / copies_out (copies of the same book: all, in the library, with members)
+    to each book, for lists and search. Withdrawn copies are not counted."""
+    tids = {b.title_id or b.id for b in books}
+    if not tids:
+        return books
+    from .models import AVAILABLE, ISSUED
+    tid = func.coalesce(Book.title_id, Book.id)
+    q = (db.query(tid, func.count(Book.id),
+                  func.sum(case((Book.status == AVAILABLE, 1), else_=0)),
+                  func.sum(case((Book.status == ISSUED, 1), else_=0)))
+         .filter(tid.in_(tids), Book.withdrawn.is_(False)).group_by(tid))
+    counts = {t: (n, int(a or 0), int(o or 0)) for t, n, a, o in q}
+    for b in books:
+        n, a, o = counts.get(b.title_id or b.id, (1, 0, 0))
+        b.copies, b.copies_in, b.copies_out = n, a, o
+    return books

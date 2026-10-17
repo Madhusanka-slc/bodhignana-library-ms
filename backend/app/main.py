@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import hash_password
 from .config import settings
+from .services import group_titles
 from .database import Base, SessionLocal, engine
 from .models import User
 from .routers import auth, books, circulation, codes, holidays, members, payments, reports, search
@@ -36,6 +37,9 @@ def upgrade_db():
         if "ref" not in payment_cols:
             conn.execute(text("ALTER TABLE payments ADD COLUMN ref VARCHAR(20) NOT NULL DEFAULT ''"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_payments_ref ON payments (ref)"))
+        if "title_id" not in book_cols:
+            conn.execute(text("ALTER TABLE books ADD COLUMN title_id INTEGER"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_books_title_id ON books (title_id)"))
         if "cover_image" not in book_cols:
             conn.execute(text("ALTER TABLE books ADD COLUMN cover_image VARCHAR(200) NOT NULL DEFAULT ''"))
         if "photo_image" not in member_cols:
@@ -54,6 +58,13 @@ def init_db():
     Base.metadata.create_all(engine)
     upgrade_db()
     with SessionLocal() as db:
+        # Copies of the same book: linked automatically the first time (staff can correct them later).
+        # A book saved without a link (older way of adding) is a book of its own.
+        if db.execute(text("SELECT 1 FROM books WHERE title_id IS NOT NULL LIMIT 1")).first() is None:
+            group_titles(db)
+        else:
+            db.execute(text("UPDATE books SET title_id = id WHERE title_id IS NULL"))
+            db.commit()
         if not db.query(User).first():
             db.add(User(username=settings.ADMIN_USERNAME, full_name="Administrator", role="admin",
                         password_hash=hash_password(settings.ADMIN_PASSWORD)))

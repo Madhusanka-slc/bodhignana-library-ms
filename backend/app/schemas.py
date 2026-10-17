@@ -1,3 +1,4 @@
+from decimal import Decimal
 from datetime import date, datetime
 from typing import Annotated, Optional
 
@@ -188,6 +189,28 @@ class BookOut(BookIn):
     borrower_name: Optional[str] = None
     borrower_no: Optional[str] = None
     location: str = ""
+    # copies of the same book
+    title_id: Optional[int] = None
+    copies: int = 0
+    copies_in: int = 0
+    copies_out: int = 0
+
+
+class AddCopiesIn(BaseModel):
+    """More copies of a book the library already has: the details are taken from that book.
+    Only what can differ between copies is given here."""
+    count: int = 1
+    acc_nos: list[str] = []  # empty: the next numbers are given
+    year_of_publication: Optional[str] = None
+    edition: Optional[str] = None
+    price: Optional[Decimal] = None
+    rack_no: Optional[str] = None
+    shelf_no: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+class SameBookIn(BaseModel):
+    code: str  # Acc. No. of a copy of the other book
 
 
 class BookPage(BaseModel):
